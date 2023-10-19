@@ -1,7 +1,8 @@
 This is the repository for code and data to generate results and analysis for the following paper:
 
 "The rat frontal orienting field dynamically encodes value for economic decisions under risk". 
-Bao, C.†, Zhu, X.†, Moller-Mara, J., Li, J., Dubroqua, S., & Erlich, J. C. (2023). https://doi.org/10.1038/s41593-023-01461-x
+Bao, C.†, Zhu, X.†, Moller-Mara, J., Li, J., Dubroqua, S., & Erlich, J. C. (2023). 
+https://www.nature.com/articles/s41593-023-01461-x
 
 † These authors contributed equally to the work. 
 
