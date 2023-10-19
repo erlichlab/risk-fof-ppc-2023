@@ -59,19 +59,17 @@ matlab> lottery_sound_control
 
 ## Generate the analysis for pseudopopulation decoding of lottery magnitude from FOF ephys data
 
-In `julia` enviroment, run `julia/fof_lottery_decode.jl` in `Pluto.jl`
+If you don't have julia, then first install julia (recommended way is to use [juliaup](https://github.com/JuliaLang/juliaup)).
 
-Install julia (recommended way is to use [juliaup](https://github.com/JuliaLang/juliaup)).
+Go into the `julia` folder of this project and run julia like this:
 
-Go into the `julia` folder and run julia like this:
-
-`julia --project=.` 
+`julia --project=. -tauto` 
 
 ```
 import Pkg
 Pkg.instantiate() # This gets the dependcies
 using Pluto
-Pluto.run(notebook="julia/fof_lottery_decode.jl")
+Pluto.run(notebook="fof_lottery_decode.jl")
 ```
 
 Note: each Pluto notebook is its own environment. The first time you run the notebook, it will download and precompile a lot of dependecies, so it can take quite a while.
