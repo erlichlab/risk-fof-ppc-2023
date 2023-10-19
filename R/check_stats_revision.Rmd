@@ -1,0 +1,524 @@
+# check some models and stats for the nn_revision
+# Chaofei 2023.4.5
+
+```{r}
+library(tidyverse)
+library(el.db)
+library(janitor)
+library(lme4)
+library(rprojroot)
+library(dplyr)
+library(lmtest)
+
+## this part we test whether there's any post-free-trial influence on choice
+git_root <- find_root(is_git_root)
+get_ppc_free_data_cntrl <- function(dbc) {
+   sql <- '
+       select a.*, b.sessid as infusion_sessid, b.region, b.volume, b.concentration, b.drug,  1 as cntrl
+        from proto.riskychoice_view a join met.infusions b on (a.sessid = b.cntrl_sessid) where b.sessid in (
+        select unique(sessid) from proto.riskychoice_view where subj_choice = "right"
+      ) and  infusiondate between "2020-07-01" and "2021-03-20"
+     '
+    df <- dbGetQuery(dbc, sql) # nolint
+    return(df %>% filter(subjid != 123))
+}
+
+
+get_ppc_free_data <- function(dbc) {
+   sql <- '
+       select a.*, a.sessid as infusion_sessid, b.region, b.volume, b.concentration, b.drug, 0 as cntrl
+        from proto.riskychoice_view a join met.infusions b using (sessid) where b.sessid in (
+        select unique(sessid) from proto.riskychoice_view where subj_choice = "right"
+      ) and  infusiondate between "2020-07-01" and "2021-03-20"
+     '
+    df <- dbGetQuery(dbc, sql) # nolint
+    return(df %>% filter(subjid != 123))
+}
+
+cdf = get_ppc_free_data_cntrl(dbc)
+df = get_ppc_free_data(dbc)
+
+filter_ppc_free_choice <-function(df){
+
+  lsdf <- data.frame(subjid = unique(df$subjid), lottery_on_right = 1)
+  lsdf$lottery_on_right[lsdf$subjid == 2160] = 0
+
+  fdf <- df %>% filter(region=="Left PPC" | region=="Right PPC") %>%
+        mutate(is_side_choice = subj_choice == "left" | subj_choice == "right") %>%
+        mutate(forced = (is.na (lottery_poke) & !is.na(surebet_poke)) | (!is.na (lottery_poke) & is.na(surebet_poke))) %>%
+        mutate(chose_left = subj_choice == "left") %>%
+        filter(viol == 0, forced == 0)
+
+  fdf <- inner_join(fdf, lsdf, by = "subjid")
+  fdf$chose_left[fdf$is_side_choice == 0] <- with(subset(fdf, is_side_choice == 0), xor(lottery_on_right, subj_choice=="lottery"))
+
+  fdf$chose_ipsi <- (fdf$chose_left  == (fdf$region == "Left PPC")) + 0
+  return(fdf)
+}
+
+con = elConnect('old_client')
+sqlquery = sprintf('select sessid from risk.good_sessions')
+good_sessids = suppressWarnings(dbGetQuery(con, sqlquery))$sessid
+good_sessids_str <- reduce(good_sessids,function(s1,s2){paste(s1,",",s2)})
+infusion_sessids <- suppressWarnings(dbGetQuery(con, "select sessid from met.infusions where infusiondate >= '2020-07-01' and infusiondate <= '2021-03-20'"))
+
+# query the risky df from subjids
+sqlquery <- sprintf("select * from proto.riskychoice_view where sessid in (%s) and subjid in (2152, 2153, 2154, 2155, 2156, 2160, 2165, 2166)", good_sessids_str)
+out <- suppressWarnings(dbGetQuery(con, sqlquery))
+
+df = out %>%
+  mutate(forced = (is.na (lottery_poke) & !is.na(surebet_poke)) | (!is.na (lottery_poke) & is.na(surebet_poke)),
+         is_side_choice = (is.na (lottery_poke) & is.na(surebet_poke)) & subj_choice!= 'violation')
+
+side_sum_df <- tabyl(df, sessid, is_side_choice) %>% filter(`TRUE`>10)
+
+side_df <- df %>% subset(sessid %in% side_sum_df$sessid) %>% subset(!(sessid %in% infusion_sessids$sessid)) %>%
+  mutate(choice = case_when(subj_choice == "lottery" ~ 1,
+                            subj_choice == "surebet" ~ 0)) %>%
+  group_by(sessid) %>%
+  mutate(total_rew_multi = case_when(subj_choice == "violation" ~ 0,
+                                     subj_choice == "lottery" ~ 0,
+                                     subj_choice == "surebet" ~ reward / sb_mag)) %>%
+  mutate(total_rew_multi = sort(unique(total_rew_multi))[2]) %>% ungroup() %>%
+  mutate(delta_ev = total_rew_multi * lottery_mag * lottery_prob - total_rew_multi * sb_mag) %>%
+  mutate(post_free_choice = lag(is_side_choice)) %>%
+  filter(viol == 0, forced == 0, is_side_choice == 0)
+
+side_df$post_free_choice <- as.integer(side_df$post_free_choice)
+side_df$subjid = factor(side_df$subjid, levels = unique(side_df$subjid))
+# fit the model
+m = glmer(choice ~ delta_ev + post_free_choice + (delta_ev|subjid), data = side_df, family = binomial)
+
+```
+
+
+## check the unilater opto data
+```{r}
+
+preprocessOpto = function(df){
+  # this function preprocesses opto risky choice data
+  df = df %>%
+    mutate(sessiondate = as.Date(trialtime)) %>%
+    mutate(forced = is.na(lottery_poke) | is.na(surebet_poke)) %>%
+    # find reward multiplier
+    group_by(sessid) %>%
+    mutate(total_rew_multi = case_when(subj_choice == "violation" ~ 0,
+                                       subj_choice == "lottery" ~ 0,
+                                       subj_choice == "surebet" ~ reward / sb_mag)) %>%
+    mutate(total_rew_multi = sort(unique(total_rew_multi))[2]) %>% ungroup() %>%
+    mutate(delta_ev = total_rew_multi * lottery_mag * lottery_prob - total_rew_multi * sb_mag) %>%
+    # define outcome
+    mutate(outcome_s = case_when(subj_choice == "lottery" & lottery_outcome == "win" ~ "lottery_win",
+                                 subj_choice == "lottery" & lottery_outcome == "lose" ~ "lottery_lose",
+                                 subj_choice == "surebet" ~ "surebet")) %>%
+    mutate(outcome = case_when(outcome_s == "lottery_win" ~ 1,
+                               outcome_s == "lottery_lose" ~ -1,
+                               outcome_s == "surebet" ~ 0)) %>%
+    mutate(choice = case_when(subj_choice == "lottery" ~ 1,
+                              subj_choice == "surebet" ~ 0)) %>%
+    mutate(region = toupper(region)) %>%
+    mutate(opto_out = case_when(isopto == 1 & region == 'LEFT FOF' ~ "opto_left",
+                                isopto == 1 & region == 'RIGHT FOF' ~ "opto_right",
+                                isopto == 1 & region == 'BILATERAL FOF' ~ "opto_bilateral",
+                                isopto == 0 ~ "no_opto")) %>%
+    mutate(opto_contr_ipsi = case_when(opto_out == "opto_left" & lottery_poke == "BotL" ~ "ipsilateral",
+                                       opto_out == "opto_left" & lottery_poke == "BotR" ~ "contralateral",
+                                       opto_out == "opto_right" & lottery_poke == "BotL" ~ "contralateral",
+                                       opto_out == "opto_right" & lottery_poke == "BotR" ~ "ipsilateral",
+                                       opto_out == "opto_bilateral" ~ "bilateral",
+                                       opto_out == "no_opto" ~ "no_opto")) %>%
+    # remove first/slow trials
+    filter(trialnum != 1 & RT_choice < 3, forced == 0) %>%
+    mutate(fiber_side = substr(region, 1, 4)) %>%
+    mutate(chose_LR = case_when(lottery_poke == "BotL" & subj_choice == 'surebet' ~ 'RIGHT',
+                                lottery_poke == "BotL" & subj_choice == 'lottery' ~ 'LEFT',
+                                lottery_poke == "BotR" & subj_choice == 'surebet' ~ 'LEFT',
+                                lottery_poke == "BotR" & subj_choice == 'lottery' ~ 'RIGHT')) %>%
+    mutate(chose_ipsi = fiber_side == chose_LR) %>%
+    mutate(deltaIpsiContraEV = case_when((fiber_side == 'LEFT' & lottery_poke == 'BotL') | (fiber_side == 'RIGHT' & lottery_poke == 'BotR')  ~  delta_ev,
+                                         TRUE ~ total_rew_multi * sb_mag - total_rew_multi * lottery_mag * lottery_prob)) %>%
+    arrange(subjid, sessid, trialid) %>%
+    filter(!is.na(outcome))
+  df$opto_out = factor(df$opto_out, levels = unique(df$opto_out))
+  df$opto_contr_ipsi = factor(df$opto_contr_ipsi, levels = unique(df$opto_contr_ipsi))
+  df$subjid = factor(df$subjid, levels = unique(df$subjid))
+  df$sessid = factor(df$sessid, levels = unique(df$sessid))
+  return(df)
+}
+
+git_root <- find_root(is_git_root)
+uni_opto_df <- read.csv(file.path(git_root, "csv", "opto_unilateral.csv"))
+df_model <- preprocessOpto(uni_opto_df) %>% filter(forced == 0)
+mSide <- glmer(chose_ipsi ~ deltaIpsiContraEV + isopto + (deltaIpsiContraEV|subjid), data = df_model, family = binomial)
+mSider <- glmer(chose_ipsi ~ deltaIpsiContraEV + (deltaIpsiContraEV|subjid), data = df_model, family = binomial)
+
+anova(mSide, mSider)
+```
+
+
+```{r}
+mValue <- glmer(choice ~ delta_ev + isopto + (delta_ev|subjid), data = df_model, family = binomial)
+mValuer <- glmer(choice ~ delta_ev + (delta_ev|subjid), data = df_model, family = binomial)
+
+anova(mValue, mValuer)
+```
+
+
+
+## test the control data, check if there is a post-forced effects?
+2023.5.19
+```{r}
+process_control_risk = function(df){
+  # this function preprocesses opto risky choice data
+  df = df %>%
+    mutate(sessiondate = as.Date(trialtime)) %>%
+    mutate(forced = is.na(lottery_poke) | is.na(surebet_poke)) %>%
+    # find reward multiplier
+    group_by(sessid) %>%
+    mutate(total_rew_multi = case_when(subj_choice == "violation" ~ 0,
+                                       subj_choice == "lottery" ~ 0,
+                                       subj_choice == "surebet" ~ reward / sb_mag)) %>%
+    mutate(total_rew_multi = sort(unique(total_rew_multi))[2]) %>% ungroup() %>%
+    mutate(delta_ev = total_rew_multi * lottery_mag * lottery_prob - total_rew_multi * sb_mag) %>%
+    mutate(choice = case_when(subj_choice == "lottery" ~ 1,
+                              subj_choice == "surebet" ~ 0)) %>%
+    mutate(lag_subj_choice = lag(subj_choice), lag_forced = lag(forced)) %>% 
+    mutate(prev_tt = case_when(lag_forced == FALSE ~ 'post_choice',
+                               lag_forced == TRUE & lag_subj_choice == 'surebet' ~ 'post_forced_sb',
+                               lag_forced == TRUE & lag_subj_choice == 'lottery' ~ 'post_forced_lott')) %>% 
+    filter(RT < 3) %>%
+    arrange(subjid, sessid, trialid)
+    
+  df$subjid = factor(df$subjid, levels = unique(df$subjid))
+  df$sessid = factor(df$sessid, levels = unique(df$sessid))
+  df$prev_tt = factor(df$prev_tt, levels = unique(df$prev_tt))
+  return(df)
+}
+
+
+control_df = read.csv(file.path(git_root, "csv", "figure_behavior_population.csv"))
+control_sessids <- unique(control_df$sessid)
+control_sessids_str <- reduce(control_sessids,function(s1,s2){paste(s1,",",s2)})
+
+sqlquery <- sprintf("select * from proto.riskychoice_view where sessid in (%s)", control_sessids_str)
+out <- suppressWarnings(dbGetQuery(con, sqlquery))
+
+original_control_df <- process_control_risk(out) %>% filter(!is.na(prev_tt))
+```
+
+```{r}
+mf <- glmer(choice ~ delta_ev + prev_tt + (delta_ev|subjid), data = original_control_df, family = binomial, nAGQ = 0)
+mr <- glmer(choice ~ delta_ev + (delta_ev|subjid), data = original_control_df, family = binomial, nAGQ = 0)
+
+anova(mf, mr)
+```
+
+
+
+# generate the glm stats for each subjid
+```{r}
+
+preprocessOpto = function(df){
+  # this function preprocesses opto risky choice data
+  df = df %>%
+    mutate(sessiondate = as.Date(trialtime)) %>%
+    mutate(forced = is.na(lottery_poke) | is.na(surebet_poke)) %>%
+    # find reward multiplier
+    group_by(sessid) %>%
+    mutate(total_rew_multi = case_when(subj_choice == "violation" ~ 0,
+                                       subj_choice == "lottery" ~ 0,
+                                       subj_choice == "surebet" ~ reward / sb_mag)) %>%
+    mutate(total_rew_multi = sort(unique(total_rew_multi))[2]) %>% ungroup() %>%
+    mutate(delta_ev = total_rew_multi * lottery_mag * lottery_prob - total_rew_multi * sb_mag) %>%
+    mutate(choice = case_when(subj_choice == "lottery" ~ 1,
+                              subj_choice == "surebet" ~ 0)) %>%
+    mutate(region = toupper(region)) %>%
+    mutate(opto_out = case_when(isopto == 1 & region == 'LEFT FOF' ~ "opto_left",
+                                isopto == 1 & region == 'RIGHT FOF' ~ "opto_right",
+                                isopto == 1 & region == 'BILATERAL FOF' ~ "opto_bilateral",
+                                isopto == 0 ~ "no_opto")) %>%
+    mutate(opto_contr_ipsi = case_when(opto_out == "opto_left" & lottery_poke == "BotL" ~ "ipsilateral",
+                                       opto_out == "opto_left" & lottery_poke == "BotR" ~ "contralateral",
+                                       opto_out == "opto_right" & lottery_poke == "BotL" ~ "contralateral",
+                                       opto_out == "opto_right" & lottery_poke == "BotR" ~ "ipsilateral",
+                                       opto_out == "opto_bilateral" ~ "bilateral",
+                                       opto_out == "no_opto" ~ "no_opto")) %>%
+    filter(RT_choice < 3) %>%
+    arrange(subjid, sessid, trialid) %>%
+    filter(forced == 0) %>% group_by(subjid) %>%
+    mutate(lottery_side = unique(lottery_poke)[!is.na(unique(lottery_poke))]) %>%
+    ungroup() %>%
+    mutate(pro_right_delta_ev = case_when(lottery_side == 'BotL' ~ -delta_ev,
+                                          lottery_side == 'BotR' ~ delta_ev),
+           choose_right = case_when(lottery_side == 'BotL' ~ 1 - choice,
+                                    lottery_side == 'BotR' ~ choice)) %>% 
+    mutate(log_rt = log(RT))
+  
+  df$opto_out = factor(df$opto_out, levels = unique(df$opto_out))
+  df$opto_contr_ipsi = factor(df$opto_contr_ipsi, levels = unique(df$opto_contr_ipsi))
+  df$subjid = factor(df$subjid, levels = unique(df$subjid))
+  df$sessid = factor(df$sessid, levels = unique(df$sessid))
+  return(df)
+}
+
+glm_stats_table_ev <- function(df, data_type = "bi_ppc_infusion", check_type = "ev") {
+  subjids <- unique(df$subjid)
+  subjid_list <- c()
+  experiment <- c()
+  analysis <- c()
+  xint <- c()
+  xint_p <- c()
+  slope <- c()
+  slope_p <- c()
+  lr_p <- c()
+  n_total <- c()
+  n_inf <- c()
+  for (i in 1:length(subjids)) {
+    this_subjid <- subjids[i]
+    this_df <- df %>% filter(subjid == this_subjid)
+    
+
+    subjid_list <- append(subjid_list, this_subjid)
+    experiment <- append(experiment, data_type)
+    analysis <- append(analysis, check_type)
+    if (str_detect(data_type, "opto")) {
+      mf <- glm("choice ~ delta_ev*isopto", this_df, family = binomial)
+      mr <- glm("choice ~ delta_ev", this_df, family = binomial)
+      this_int <- coef(summary(mf))[1, 1]
+      this_int_p <- coef(summary(mf))[1, 4]
+      this_slope <- coef(summary(mf))[2, 1]
+      this_slope_p <- coef(summary(mf))[2,4]
+      this_lrp <- lrtest(mf, mr)[2, 5]
+      this_n_total <- nrow(this_df)
+      this_n_inf <- nrow(this_df %>% filter(isopto == 1))
+    } else {
+      #this_df$dosage <- factor(this_df$dosage)
+      mf <- glm("choice ~ delta_ev*dosage", this_df, family = binomial)
+      mr <- glm("choice ~ delta_ev", this_df, family = binomial)
+      this_int <- coef(summary(mf))[1, 1]
+      this_int_p <- coef(summary(mf))[1, 4]
+      this_slope <- coef(summary(mf))[2, 1]
+      this_slope_p <- coef(summary(mf))[2,4]
+      this_lrp <- lrtest(mf, mr)[2, 5]
+      this_n_total <- nrow(this_df)
+      this_n_inf <- nrow(this_df %>% filter(dosage>0))
+    }
+    xint <- append(xint, this_int)
+    xint_p <- append(xint_p, this_int_p)
+    slope <- append(slope, this_slope)
+    slope_p <- append(slope_p, this_slope_p)
+    lr_p <- append(lr_p, this_lrp)
+    n_total <- append(n_total, this_n_total)
+    n_inf <- append(n_inf, this_n_inf)
+  }
+  df <- data.frame(subjid_list, experiment, analysis, xint, xint_p, slope, slope_p, lr_p, n_total, n_inf)
+  return(df)
+}
+
+glm_stats_table_side <- function(df, data_type = "bi_ppc_infusion", check_type = "ev", brain = "fof") {
+  subjids <- unique(df$subjid)
+  subjid_list <- c()
+  experiment <- c()
+  analysis <- c()
+  brain_areas <- c()
+  p_value_left <- c()
+  p_value_right <- c()
+  p_value_left_interaction <- c()
+  p_value_right_interaction <- c()
+  p_value_lrtest <- c()
+  n_total <- c()
+  n_inf <- c()
+  for (i in 1:length(subjids)) {
+    this_subjid <- subjids[i]
+    this_df <- df %>% filter(subjid == this_subjid)
+
+    subjid_list <- append(subjid_list, this_subjid)
+    experiment <- append(experiment, data_type)
+    analysis <- append(analysis, check_type)
+    if (str_detect(data_type, "opto")) {
+      mf <- glm("choose_right ~ pro_right_delta_ev * opto_out", this_df, family = binomial)
+      mr <- glm("choose_right ~ pro_right_delta_ev", this_df, family = binomial)
+      this_pl <- coef(summary(mf))[3, 4]
+      this_pr <- coef(summary(mf))[4, 4]
+      this_plintp <- coef(summary(mf))[5, 4]
+      this_printp <- coef(summary(mf))[6, 4]
+      this_p3 <- lrtest(mf, mr)[2, 5]
+      this_n_total <- nrow(this_df)
+      this_n_inf <- nrow(this_df %>% filter(isopto == 1))
+    } else {
+      this_df$infusion_side <- factor(this_df$infusion_side)
+      mf <- glm("choose_right ~ pro_right_delta_ev*infusion_side", this_df, family = binomial)
+      mr <- glm("choose_right ~ pro_right_delta_ev", this_df, family = binomial)
+      this_pl <- coef(summary(mf))[3, 4]
+      this_pr <- coef(summary(mf))[4, 4]
+      this_plintp <- coef(summary(mf))[5, 4]
+      this_printp <- coef(summary(mf))[6, 4]
+      this_p3 <- lrtest(mf, mr)[2, 5]
+      this_n_total <- nrow(this_df)
+      this_n_inf <- nrow(this_df %>% filter(dosage>0))
+    }
+    p_value_left <- append(p_value_left, this_pl)
+    p_value_right <- append(p_value_right, this_pr)
+    p_value_left_interaction <- append(p_value_left_interaction, this_plintp)
+    p_value_right_interaction <- append(p_value_right_interaction, this_printp)
+    p_value_lrtest <- append(p_value_lrtest, this_p3)
+    n_total <- append(n_total, this_n_total)
+    n_inf <- append(n_inf, this_n_inf)
+  }
+  df <- data.frame(subjid_list, experiment, analysis, p_value_left, p_value_left_interaction, p_value_right, p_value_right_interaction, p_value_lrtest, n_total, n_inf)
+  return(df)
+}
+
+glm_stats_table_bi_LRT <- function(df, data_type = "bi_ppc_infusion", check_type = "log_rt") {
+  subjids <- unique(df$subjid)
+  subjid_list <- c()
+  experiment <- c()
+  analysis <- c()
+  p_dose <- c()
+  p_value_lrtest <- c()
+  n_total <- c()
+  n_inf <- c()
+  for (i in 1:length(subjids)) {
+    this_subjid <- subjids[i]
+    this_df <- df %>% filter(subjid == this_subjid)
+    
+
+    subjid_list <- append(subjid_list, this_subjid)
+    experiment <- append(experiment, data_type)
+    analysis <- append(analysis, check_type)
+    if (str_detect(data_type, "opto")) {
+      mf <- lm("log_rt ~ isopto + delta_ev * choice", this_df)
+      mr <- lm("log_rt ~ delta_ev * choice", this_df)
+      this_p <- coef(summary(mf))[2, 4]
+      this_p3 <- lrtest(mf, mr)[2, 5]
+      this_n_total <- nrow(this_df)
+      this_n_inf <- nrow(this_df %>% filter(isopto == 1))
+    } else {
+      #this_df$dosage <- factor(this_df$dosage)
+      mf <- lm("log_RT ~ dosage + delta_ev * choice", this_df)
+      mr <- lm("log_RT ~ delta_ev * choice", this_df)
+      this_p <- coef(summary(mf))[2, 4]
+      this_p3 <- lrtest(mf, mr)[2, 5]
+      this_n_total <- nrow(this_df)
+      this_n_inf <- nrow(this_df %>% filter(dosage>0))
+    }
+    
+    p_dose <- append(p_dose, this_p)
+    p_value_lrtest <- append(p_value_lrtest, this_p3)
+    n_total <- append(n_total, this_n_total)
+    n_inf <- append(n_inf, this_n_inf)
+    
+  }
+  df <- data.frame(subjid_list, experiment, analysis, p_dose, p_value_lrtest, n_total, n_inf)
+  return(df)
+}
+
+
+glm_stats_table_uni_LRT <- function(df, data_type = "bi_ppc_infusion", check_type = "log_rt") {
+  subjids <- unique(df$subjid)
+  subjid_list <- c()
+  experiment <- c()
+  analysis <- c()
+  p_dose <- c()
+  p_value_lrtest <- c()
+  n_total <- c()
+  n_inf <- c()
+  for (i in 1:length(subjids)) {
+    this_subjid <- subjids[i]
+    this_df <- df %>% filter(subjid == this_subjid)
+    
+
+    subjid_list <- append(subjid_list, this_subjid)
+    experiment <- append(experiment, data_type)
+    analysis <- append(analysis, check_type)
+    if (str_detect(data_type, "opto")) {
+      mf <- lm("log_rt ~ opto_out + pro_right_delta_ev * choice", this_df)
+      mr <- lm("log_rt ~ pro_right_delta_ev * choice", this_df)
+      this_p <- coef(summary(mf))[2, 4]
+      this_p3 <- lrtest(mf, mr)[2, 5]
+      this_n_total <- nrow(this_df)
+      this_n_inf <- nrow(this_df %>% filter(isopto == 1))
+    } else {
+      this_df$infusion_side <- factor(this_df$infusion_side)
+      mf <- lm("log_rt ~ infusion_side + pro_right_delta_ev * choice", this_df)
+      mr <- lm("log_rt ~ pro_right_delta_ev * choice", this_df)
+      this_p <- coef(summary(mf))[2, 4]
+      this_p3 <- lrtest(mf, mr)[2, 5]
+      this_n_total <- nrow(this_df)
+      this_n_inf <- nrow(this_df %>% filter(dosage>0))
+    }
+    
+    p_dose <- append(p_dose, this_p)
+    p_value_lrtest <- append(p_value_lrtest, this_p3)
+    n_total <- append(n_total, this_n_total)
+    n_inf <- append(n_inf, this_n_inf)
+    
+  }
+  df <- data.frame(subjid_list, experiment, analysis, p_dose, p_value_lrtest, n_total, n_inf)
+  return(df)
+}
+```
+
+```{r}
+# bilateral ev
+df_m_bi_ppc <- read.csv(file.path(git_root, "csv","figure_infusion_bi_ppc.csv")) %>% filter(dosage > 0)
+control_df <- read.csv(file.path(git_root, "csv","figure_behavior_population.csv"))
+df_m_bi_ppc <- df_m_bi_ppc %>% filter(as.Date(trialtime) < "2020-11-19")
+df_m_bi_ppc <- rbind(control_df, df_m_bi_ppc) %>% filter(subjid != 2155, forced == 0, RT<3)
+
+glm_bi_m_ppc_ev <- glm_stats_table_ev(df_m_bi_ppc, data_type = 'bi_ppc_infusion', check_type = 'ev')
+
+df_m_bi_fof <- read.csv(file.path(git_root, "csv","figure_infusion_bi_fof.csv")) %>% filter(dosage %in% c(0.075,0.3), as.Date(trialtime) < "2020-11-19")
+df_m_bi_fof <- rbind(control_df, df_m_bi_fof) %>% filter(forced == 0, RT<3)
+glm_bi_m_fof_ev <- glm_stats_table_ev(df_m_bi_fof, data_type = 'bi_fof_infusion', check_type = 'ev')
+
+df_o_bi_fof <- read.csv(file.path(git_root, "csv","opto_bilateral.csv"), na.strings=c("","NA")) %>% preprocessOpto()
+glm_bi_o_fof_ev <- glm_stats_table_ev(df_o_bi_fof, data_type = 'bi_fof_opto', check_type = 'ev')
+
+glm_stats_bi <- rbind(glm_bi_m_ppc_ev,glm_bi_m_fof_ev,glm_bi_o_fof_ev)
+
+
+# unilateral ev
+df_m_uni_ppc <- read.csv(file.path(git_root, "csv","figure_infusion_uni_ppc.csv")) %>% filter(dosage == 0.3, as.Date(trialtime) < "2020-11-19")
+df_m_uni_ppc <- rbind(control_df, df_m_uni_ppc) %>% filter(forced == 0, RT<3)
+glm_uni_m_ppc_ev <- glm_stats_table_ev(df_m_uni_ppc, data_type = 'uni_ppc_infusion', check_type = 'ev')
+
+df_m_uni_fof <- read.csv(file.path(git_root, "csv","figure_infusion_uni_fof.csv")) %>% filter(dosage == 0.3, as.Date(trialtime) < "2020-11-19")
+df_m_uni_fof <- rbind(control_df, df_m_uni_fof) %>% filter(forced == 0, RT<3)
+glm_uni_m_fof_ev <- glm_stats_table_ev(df_m_uni_fof, data_type = 'uni_fof_infusion', check_type = 'ev')
+
+df_o_uni_fof <- read.csv(file.path(git_root, "csv","opto_unilateral.csv"), na.strings=c("","NA")) %>% preprocessOpto()
+glm_uni_o_fof_ev <- glm_stats_table_ev(df_o_uni_fof, data_type = 'uni_fof_opto', check_type = 'ev')
+
+glm_stats_uni <- rbind(glm_uni_m_ppc_ev,glm_uni_m_fof_ev,glm_uni_o_fof_ev)
+
+glm_stats_ev <- rbind(glm_stats_bi, glm_stats_uni)
+write.csv(glm_stats_ev, 'glm_stats_for_s4_a-f.csv')
+
+# unilateral side
+glm_uni_m_ppc_side <- glm_stats_table_side(df_m_uni_ppc, data_type = 'uni_ppc_infusion', check_type = 'side')
+glm_uni_m_fof_side <- glm_stats_table_side(df_m_uni_fof, data_type = 'uni_fof_infusion', check_type = 'side')
+glm_uni_o_fof_side <- glm_stats_table_side(df_o_uni_fof%>% filter(subjid != 2172), data_type = 'uni_fof_opto', check_type = 'side')
+
+glm_stats_side <- rbind(glm_uni_m_ppc_side,glm_uni_m_fof_side,glm_uni_o_fof_side)
+write.csv(glm_stats_side, 'glm_stats_for_s4_g-i.csv')
+
+# stats for RT
+lm_bi_m_ppc_lrt <- glm_stats_table_bi_LRT(df_m_bi_ppc, data_type = 'bi_ppc_infusion', check_type = 'LRT')
+lm_bi_m_fof_lrt <- glm_stats_table_bi_LRT(df_m_bi_fof, data_type = 'bi_fof_infusion', check_type = 'LRT')
+lm_bi_o_fof_lrt <- glm_stats_table_bi_LRT(df_o_bi_fof, data_type = 'bi_fof_opto', check_type = 'LRT')
+
+lm_uni_m_ppc_lrt <- glm_stats_table_bi_LRT(df_m_uni_ppc, data_type = 'uni_ppc_infusion', check_type = 'LRT')
+lm_uni_m_fof_lrt <- glm_stats_table_bi_LRT(df_m_uni_fof, data_type = 'uni_fof_infusion', check_type = 'LRT')
+lm_uni_o_fof_lrt <- glm_stats_table_bi_LRT(df_o_uni_fof, data_type = 'uni_fof_opto', check_type = 'LRT')
+
+lm_stats_lrt <- rbind(lm_bi_m_ppc_lrt,lm_bi_m_fof_lrt,lm_bi_o_fof_lrt,lm_uni_m_ppc_lrt,lm_uni_m_fof_lrt,lm_uni_o_fof_lrt)
+write.csv(lm_stats_lrt, 'lm_stats_for_LRT.csv')
+
+```
+
+
+
+
+
+

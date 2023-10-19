@@ -1,0 +1,347 @@
+---
+title: "Check likelihood ratio tests for each panel in figure2"
+output:
+  html_document: default
+  word_document: default
+date: "12/5/2023"
+---
+
+## Check likelihood ratio tests for each panel in figure2
+
+Chaofei 2023.5.12
+
+load required libraries and functions
+
+```{r include=F}
+library(rprojroot)
+git_root <- find_root(is_git_root)
+library(lmtest)
+library(stargazer)
+library(xtable)
+library(texreg)
+source(file.path(git_root, "R", "figure_opto.R"))
+
+myout <- function(m1, m2, title) {
+  cat(sprintf("\\subsection{%s}\n\n", title))
+  cat("\\subsubsection{Model Summary}\n\n")
+  cat("\\begin{verbatim}\n")
+  print(summary(m1))
+  cat("\\end{verbatim}\n\n")
+
+  cat("\\subsubsection{Likelihood Ratio Test}\n\n")
+  cat("\\begin{verbatim}\n")
+  print(lrtest(m1, m2))
+  cat("\\end{verbatim}\n")
+}
+```
+
+```{r include=F}
+# bilateral PPC muscimol infusion (r1c2 panel)
+m_bi_ppc_df = read.csv(file.path(git_root, 'csv','figure_infusion_bi_ppc.csv')) %>% filter(dosage != 0)
+m_bi_control_df = read.csv(file.path(git_root, 'csv','figure_behavior_population.csv'))
+m_bi_ppc_df = m_bi_ppc_df %>% filter(as.Date(trialtime) < '2020-11-19')
+m_bi_ppc_df = rbind(m_bi_control_df, m_bi_ppc_df)
+m_bi_ppc_df$subjid <- factor(m_bi_ppc_df$subjid)
+
+mf_m_bi_ppc = glmer(choice ~ delta_ev*dosage + (dosage*delta_ev|subjid), m_bi_ppc_df, family = binomial, nAGQ = 0)
+mr_m_bi_ppc = glmer(choice ~ delta_ev + (dosage*delta_ev|subjid), m_bi_ppc_df, family = binomial, nAGQ = 0)
+```
+
+```{R echo=F, comment=NA}
+myout(mf_m_bi_ppc, mr_m_bi_ppc, 'Figure 2b: Muscimol bilateral PPC')
+```
+```{r }
+pred_df = data_grid(m_bi_ppc_df, delta_ev = seq(min(delta_ev) - 20, max(delta_ev) + 20, by = 1), dosage, subjid)
+pred = predict(mf_m_bi_ppc, m_bi_ppc_df, type = 'response', allow.new.levels=TRUE, se.fit = TRUE)
+
+p = ggplot(m_bi_ppc_df) + theme_classic(base_size = 15) +
+    geom_hline(yintercept = 0.5, linetype = 'dashed', alpha = 0.4) +
+    geom_vline(xintercept = 0, linetype = 'dashed',  alpha = 0.4) +
+    scale_y_continuous(limits = c(-0.02, 1.02), breaks = c(0, 0.5, 1)) +
+    xlab(expression(EV[lottery]-EV[surebet])) + ylab("P(Chose Lottery)") +
+    stat_summary_bin(mapping = aes(x = delta_ev, y = choice, color = factor(dosage)), bins = 6, fun.data = bino, geom = 'pointrange', position = position_dodge(10)) #+
+    #geom_line(pred_df, mapping = aes(x = delta_ev, y = pred, color = dosage))
+```
+
+
+```{r include=F}
+# bilateral FOF muscimol infusion (r1c3 panel)
+m_bi_fof_df = read.csv(file.path(git_root, 'csv','figure_infusion_bi_fof.csv')) %>% filter(dosage %in% c(0.075, 0.3))
+m_bi_fof_df = m_bi_fof_df %>% filter(as.Date(trialtime) < '2020-11-19')
+m_bi_fof_df = rbind(m_bi_control_df, m_bi_fof_df)
+m_bi_fof_df$subjid <- factor(m_bi_fof_df$subjid)
+
+mf_m_bi_fof = glmer(choice ~ delta_ev*dosage + (delta_ev*dosage|subjid), m_bi_fof_df, family = binomial)
+mr_m_bi_fof = glmer(choice ~ delta_ev + (delta_ev*dosage|subjid), m_bi_fof_df, family = binomial)
+```
+
+```{r echo=F, comment=NA}
+myout(mf_m_bi_fof, mr_m_bi_fof, 'Figure 2c: Muscimol bilateral FOF')
+```
+
+
+```{r include=F}
+# bilateral FOF opto (r1c4 panel)
+o_bi_fof_df = read.csv(file.path(git_root, 'csv','opto_bilateral.csv'), na.strings=c("","NA"))
+o_bi_fof_df <- preprocessOpto(o_bi_fof_df) %>% filter(forced == 0)
+o_bi_fof_df$subjid <- factor(o_bi_fof_df$subjid)
+o_bi_fof_df$sessid <- factor(o_bi_fof_df$sessid)
+
+mf_o_bi_fof = glmer(choice ~ delta_ev * opto_contr_ipsi + (delta_ev * opto_contr_ipsi|sessid), o_bi_fof_df, family = binomial)
+mr_o_bi_fof = glmer(choice ~ delta_ev + (delta_ev * opto_contr_ipsi|sessid), o_bi_fof_df, family = binomial)
+```
+
+```{r echo=F, comment=NA}
+myout(mf_o_bi_fof, mr_o_bi_fof, 'Figure 2d: Opto bilateral FOF')
+```
+
+
+```{r include=F}
+# unilateral FOF+PPC muscimol infusion mixed sides with ev (r2c1 panel)
+m_uni_fof_ppc_mixS_df <- read.csv(file.path(git_root, "csv", "figure_infusion_side.csv")) %>% filter(dosage != 0)
+m_uni_fof_ppc_mixS_df <- rbind(m_bi_control_df, m_uni_fof_ppc_mixS_df)
+m_uni_fof_ppc_mixS_df$region <- factor(m_uni_fof_ppc_mixS_df$region)
+m_uni_fof_ppc_mixS_df$drug <- tolower(m_uni_fof_ppc_mixS_df$drug)
+m_uni_fof_ppc_mixS_df$drug <- factor(m_uni_fof_ppc_mixS_df$drug)
+m_uni_fof_ppc_mixS_df$subjid <- factor(m_uni_fof_ppc_mixS_df$subjid)
+
+mf_m_uni_fof_ppc_mixS = glmer(choice ~ delta_ev*drug + (delta_ev*drug|subjid), m_uni_fof_ppc_mixS_df, family = binomial)
+mr_m_uni_fof_ppc_mixS = glmer(choice ~ delta_ev + (delta_ev*drug|subjid), m_uni_fof_ppc_mixS_df, family = binomial)
+```
+
+```{r echo=F, comment=NA}
+myout(mf_m_uni_fof_ppc_mixS, mr_m_uni_fof_ppc_mixS, 'Figure 2e: Muscimol unilateral PPC+FOF')
+```
+
+
+```{r include=F}
+# unilateral PPC muscimol infusion mixed sides with ev (r2c2 panel)
+m_uni_ppc_mixS_df = read.csv(file.path(git_root, "csv", "figure_infusion_uni_ppc.csv")) %>% filter(dosage != 0)
+m_uni_ppc_mixS_df = m_uni_ppc_mixS_df %>% filter(as.Date(trialtime) < '2020-11-19')
+m_uni_ppc_mixS_df = rbind(m_bi_control_df, m_uni_ppc_mixS_df)
+m_uni_ppc_mixS_df$infusion_side = factor(m_uni_ppc_mixS_df$infusion_side)
+m_uni_ppc_mixS_df$drug <- tolower(m_uni_ppc_mixS_df$drug)
+m_uni_ppc_mixS_df$drug = factor(m_uni_ppc_mixS_df$drug)
+m_uni_ppc_mixS_df$subjid <- factor(m_uni_ppc_mixS_df$subjid)
+
+mf_m_uni_ppc_mixS = glmer(choice ~ delta_ev*drug + (delta_ev*drug|subjid), m_uni_ppc_mixS_df, family = binomial)
+mr_m_uni_ppc_mixS = glmer(choice ~ delta_ev + (delta_ev*drug|subjid), m_uni_ppc_mixS_df, family = binomial)
+```
+
+```{r echo=F, comment=NA}
+myout(mf_m_uni_ppc_mixS, mr_m_uni_ppc_mixS, 'Figure 2f: Muscimol unilateral PPC')
+```
+
+
+```{r include=F}
+# unilateral FOF muscimol infusion mixed sides with ev (r2c2 panel)
+m_uni_fof_mixS_df = read.csv(file.path(git_root, "csv", "figure_infusion_uni_fof.csv")) %>% filter(dosage != 0)
+m_uni_fof_mixS_df = m_uni_fof_mixS_df %>% filter(as.Date(trialtime) < '2020-11-19')
+m_uni_fof_mixS_df = rbind(m_bi_control_df, m_uni_fof_mixS_df)
+m_uni_fof_mixS_df$infusion_side = factor(m_uni_fof_mixS_df$infusion_side)
+m_uni_fof_mixS_df$drug <- tolower(m_uni_fof_mixS_df$drug)
+m_uni_fof_mixS_df$drug = factor(m_uni_fof_mixS_df$drug)
+m_uni_fof_mixS_df$subjid <- factor(m_uni_fof_mixS_df$subjid)
+
+mf_m_uni_fof_mixS = glmer(choice ~ delta_ev*drug + (delta_ev*drug|subjid), m_uni_fof_mixS_df, family = binomial)
+mr_m_uni_fof_mixS = glmer(choice ~ delta_ev + (delta_ev*drug|subjid), m_uni_fof_mixS_df, family = binomial)
+```
+
+```{r echo=F, comment=NA}
+myout(mf_m_uni_fof_mixS, mr_m_uni_fof_mixS, 'Figure 2g: Muscimol unilateral FOF')
+```
+
+
+```{r include=F}
+# bilateral FOF opto (r1c4 panel)
+o_uni_fof_mixS_df = read.csv(file.path(git_root, 'csv','opto_unilateral.csv'), na.strings=c("","NA"))
+o_uni_fof_mixS_df <- preprocessOpto(o_uni_fof_mixS_df) %>% filter(forced == 0) %>% group_by(subjid) %>%
+    mutate(lottery_side = unique(lottery_poke)[!is.na(unique(lottery_poke))]) %>%
+    ungroup() %>%
+    mutate(pro_right_delta_ev = case_when(lottery_side == 'BotL' ~ -delta_ev,
+                                          lottery_side == 'BotR' ~ delta_ev),
+           choose_right = case_when(lottery_side == 'BotL' ~ 1 - choice,
+                                    lottery_side == 'BotR' ~ choice))
+o_uni_fof_mixS_df$isopto <- factor(o_uni_fof_mixS_df$isopto)
+o_uni_fof_mixS_df$subjid <- factor(o_uni_fof_mixS_df$subjid)
+o_uni_fof_mixS_df$sessid <- factor(o_uni_fof_mixS_df$sessid)
+
+mf_o_uni_fof_mixS = glmer(choice ~ delta_ev * isopto + (delta_ev * isopto|sessid), o_uni_fof_mixS_df, family = binomial)
+mr_o_uni_fof_mixS = glmer(choice ~ delta_ev + (delta_ev * isopto|sessid), o_uni_fof_mixS_df, family = binomial)
+```
+
+```{r echo=F, comment=NA}
+myout(mf_o_uni_fof_mixS, mr_o_uni_fof_mixS, 'Figure 2h: Opto unilateral FOF')
+```
+
+
+```{r include=F}
+# unilateral FOF+PPC muscimol infusion mixed sides with ev (r3c1 panel)
+m_uni_fof_ppc_mixS_df <- m_uni_fof_ppc_mixS_df %>% filter(region != 'control')
+mf_m_uni_fof_ppc = glmer(choose_right ~ pro_right_delta_ev+region + (pro_right_delta_ev+region|subjid), m_uni_fof_ppc_mixS_df, family = binomial)
+mr_m_uni_fof_ppc = glmer(choose_right ~ pro_right_delta_ev + (pro_right_delta_ev+region|subjid), m_uni_fof_ppc_mixS_df, family = binomial)
+```
+
+```{r echo=F, comment=NA}
+myout(mf_m_uni_fof_ppc, mr_m_uni_fof_ppc, 'Figure 2i: Muscimol unilateral PPC+FOF (left vs. right)')
+```
+
+
+```{r include=F}
+# unilateral PPC muscimol infusion with pro_right_delta_ev (r3c2 panel)
+m_uni_ppc_mixS_df <- m_uni_ppc_mixS_df %>% filter(region != 'control')
+mf_uni_ppc = glmer(choose_right ~ pro_right_delta_ev+region + (pro_right_delta_ev+region|subjid), m_uni_ppc_mixS_df, family = binomial, nAGQ = 0)
+mr_uni_ppc = glmer(choose_right ~ pro_right_delta_ev + (pro_right_delta_ev+region|subjid), m_uni_ppc_mixS_df, family = binomial, nAGQ = 0)
+```
+
+```{r echo=F, comment=NA}
+myout(mf_uni_ppc, mr_uni_ppc, 'Figure 2j: Muscimol unilateral PPC (left vs. right)')
+```
+
+
+```{r include=F}
+# unilateral FOF muscimol infusion with pro_right_delta_ev (r3c3 panel)
+m_uni_fof_mixS_df <- m_uni_fof_mixS_df %>% filter(region != 'control')
+mf_uni_fof = glmer(choose_right ~ pro_right_delta_ev+region + (pro_right_delta_ev+region|subjid), m_uni_fof_mixS_df, family = binomial, nAGQ = 0)
+mr_uni_fof = glmer(choose_right ~ pro_right_delta_ev + (pro_right_delta_ev+region|subjid), m_uni_fof_mixS_df, family = binomial, nAGQ = 0)
+```
+
+```{r echo=F, comment=NA}
+myout(mf_uni_fof, mr_uni_fof, 'Figure 2k: Muscimol unilateral FOF (left vs. right)')
+```
+
+
+```{r include=F}
+# unilateral FOF opto with pro_right_delta_ev (r3c4 panel)
+o_uni_fof_mixS_df <- o_uni_fof_mixS_df %>% filter(opto_out != 'no_opto')
+mf_o_uni_fof = glmer(choose_right ~ pro_right_delta_ev + opto_out + (pro_right_delta_ev + opto_out|sessid), o_uni_fof_mixS_df, family = binomial, nAGQ = 0)
+mr_o_uni_fof = glmer(choose_right ~ pro_right_delta_ev + (pro_right_delta_ev + opto_out|sessid), o_uni_fof_mixS_df, family = binomial, nAGQ = 0)
+```
+
+```{r echo=F, comment=NA}
+myout(mf_o_uni_fof, mr_o_uni_fof, 'Figure 2l: Opto unilateral FOF (left vs. right)')
+```
+
+
+# test the muscimol effects on the PPC for the first 35 trial
+```{r include=F}
+# bilateral PPC muscimol infusion ()
+m_bi_ppc_df = read.csv(file.path(git_root, 'csv','figure_infusion_bi_ppc.csv')) %>% filter(dosage != 0, trialnum<=40)
+m_bi_control_df = read.csv(file.path(git_root, 'csv','figure_behavior_population.csv'))
+m_bi_ppc_df = m_bi_ppc_df %>% filter(as.Date(trialtime) < '2020-11-19')
+m_bi_ppc_df = rbind(m_bi_control_df, m_bi_ppc_df)
+m_bi_ppc_df$subjid <- factor(m_bi_ppc_df$subjid)
+
+mf_m_bi_ppc = glmer(choice ~ delta_ev*dosage + (dosage*delta_ev|subjid), m_bi_ppc_df, family = binomial, nAGQ = 0)
+mr_m_bi_ppc = glmer(choice ~ delta_ev + (dosage*delta_ev|subjid), m_bi_ppc_df, family = binomial, nAGQ = 0)
+```
+
+```{R echo=F, comment=NA}
+myout(mf_m_bi_ppc, mr_m_bi_ppc, 'First 35 trials: Muscimol bilateral PPC')
+```
+
+```{r include=F}
+# unilateral PPC muscimol infusion mixed sides with ev ()
+m_uni_ppc_mixS_df = read.csv(file.path(git_root, "csv", "figure_infusion_uni_ppc.csv")) %>% filter(dosage != 0, trialnum<=40)
+m_uni_ppc_mixS_df = m_uni_ppc_mixS_df %>% filter(as.Date(trialtime) < '2020-11-19')
+m_uni_ppc_mixS_df = rbind(m_bi_control_df, m_uni_ppc_mixS_df)
+m_uni_ppc_mixS_df$infusion_side = factor(m_uni_ppc_mixS_df$infusion_side)
+m_uni_ppc_mixS_df$drug <- tolower(m_uni_ppc_mixS_df$drug)
+m_uni_ppc_mixS_df$drug = factor(m_uni_ppc_mixS_df$drug)
+m_uni_ppc_mixS_df$subjid <- factor(m_uni_ppc_mixS_df$subjid)
+
+mf_m_uni_ppc_mixS = glmer(choice ~ delta_ev*drug + (delta_ev*drug|subjid), m_uni_ppc_mixS_df, family = binomial, nAGQ = 0)
+mr_m_uni_ppc_mixS = glmer(choice ~ delta_ev + (delta_ev*drug|subjid), m_uni_ppc_mixS_df, family = binomial, nAGQ = 0)
+```
+
+```{r echo=F, comment=NA}
+myout(mf_m_uni_ppc_mixS, mr_m_uni_ppc_mixS, 'First 35 trials: Muscimol unilateral PPC')
+```
+
+```{r include=F}
+# unilateral PPC muscimol infusion with pro_right_delta_ev ()
+m_uni_ppc_mixS_df <- m_uni_ppc_mixS_df %>% filter(region != 'control')
+mf_uni_ppc = glmer(choose_right ~ pro_right_delta_ev+region + (pro_right_delta_ev+region|subjid), m_uni_ppc_mixS_df, family = binomial, nAGQ = 0)
+mr_uni_ppc = glmer(choose_right ~ pro_right_delta_ev + (pro_right_delta_ev+region|subjid), m_uni_ppc_mixS_df, family = binomial, nAGQ = 0)
+```
+
+```{r echo=F, comment=NA}
+myout(mf_uni_ppc, mr_uni_ppc, 'Figure 2j: Muscimol unilateral PPC (left vs. right)')
+```
+
+
+# for reaction time test
+```{r include=F}
+# bilateral FOF muscimol infusion 
+m_bi_fof_df = read.csv(file.path(git_root, 'csv','figure_infusion_bi_fof.csv')) %>% filter(dosage %in% c(0.075, 0.3))
+m_bi_fof_df = m_bi_fof_df %>% filter(as.Date(trialtime) < '2020-11-19')
+m_bi_fof_df = rbind(m_bi_control_df, m_bi_fof_df)
+m_bi_fof_df$subjid <- factor(m_bi_fof_df$subjid)
+
+mf_m_bi_fof = lmer(log_RT ~ dosage + delta_ev*choice + (delta_ev*choice|subjid), m_bi_fof_df)
+mr_m_bi_fof = lmer(log_RT ~ delta_ev*choice + (delta_ev*choice|subjid), m_bi_fof_df)
+```
+
+```{r echo=F, comment=NA}
+myout(mf_m_bi_fof, mr_m_bi_fof, 'bi fof muscimol RT test')
+```
+
+```{r include=F}
+# bilateral FOF muscimol infusion 
+m_uni_fof_df = read.csv(file.path(git_root, 'csv','figure_infusion_uni_fof.csv')) %>% filter(dosage %in% c(0.075, 0.3))
+m_uni_fof_df = m_uni_fof_df %>% filter(as.Date(trialtime) < '2020-11-19')
+m_uni_fof_df = rbind(m_bi_control_df, m_uni_fof_df)
+m_uni_fof_df$subjid <- factor(m_uni_fof_df$subjid)
+
+mf_m_uni_fof = lmer(log_RT ~ dosage + delta_ev*choice + (delta_ev*choice|subjid), m_uni_fof_df)
+mr_m_uni_fof = lmer(log_RT ~ delta_ev*choice + (delta_ev*choice|subjid), m_uni_fof_df)
+```
+
+```{r echo=F, comment=NA}
+myout(mf_m_uni_fof, mr_m_uni_fof, 'bi fof muscimol RT test')
+```
+
+```{r include=F}
+# bilateral FOF opto (r1c3 panel)
+out <- read.csv(file.path(git_root, "csv", "opto_bilateral.csv"), na.strings = c("", "NA"))
+df <- preprocessOpto(out)
+free_df <- df %>%
+  mutate(
+    log_rt = log(RT), sessid = factor(df$sessid, levels = unique(df$sessid)),
+    opto_contr_ipsi = factor(df$opto_contr_ipsi, levels = unique(df$opto_contr_ipsi)),
+    choice = factor(df$choice)
+  ) %>%
+  filter(forced == 0 & RT < 3 & !is.na(RT))
+
+mf_o_bi_fof <- lmer(log_rt ~ opto_contr_ipsi + delta_ev  * choice + (delta_ev * choice | sessid), data = free_df)
+mr_o_bi_fof <- lmer(log_rt ~ delta_ev * choice + (delta_ev * choice | sessid), data = free_df)
+```
+
+```{r echo=F, comment=NA}
+myout(mf_o_bi_fof, mr_o_bi_fof, 'bi fof opto RT test')
+```
+
+```{r include=F}
+# bilateral FOF muscimol infusion 
+m_uni_fof_mixS_df = read.csv(file.path(git_root, "csv", "figure_infusion_uni_fof.csv")) %>% filter(dosage != 0)
+m_uni_fof_mixS_df = m_uni_fof_mixS_df %>% filter(as.Date(trialtime) < '2020-11-19')
+m_uni_fof_mixS_df = rbind(m_bi_control_df, m_uni_fof_mixS_df)
+m_uni_fof_mixS_df$infusion_side = factor(m_uni_fof_mixS_df$infusion_side)
+m_uni_fof_mixS_df$drug <- tolower(m_uni_fof_mixS_df$drug)
+m_uni_fof_mixS_df$drug = factor(m_uni_fof_mixS_df$drug)
+m_uni_fof_mixS_df$subjid <- factor(m_uni_fof_mixS_df$subjid)
+
+mf_m_uni_fof = lmer(log_RT ~ delta_ev*dosage*choice + (delta_ev*dosage*choice|subjid), m_uni_fof_mixS_df)
+mr_m_uni_fof = lmer(log_RT ~ delta_ev*choice + (delta_ev*dosage*choice|subjid), m_uni_fof_mixS_df)
+
+mf_m_uni_fof1 = lmer(log_RT ~ dosage + delta_ev*choice + (delta_ev*choice|subjid), m_uni_fof_mixS_df)
+mr_m_uni_fof1 = lmer(log_RT ~ choice*delta_ev + (delta_ev*choice|subjid), m_uni_fof_mixS_df)
+```
+
+```{r echo=F, comment=NA}
+myout(mf_m_uni_fof1, mr_m_uni_fof1, 'bi fof muscimol RT test')
+```
+
+
+
+

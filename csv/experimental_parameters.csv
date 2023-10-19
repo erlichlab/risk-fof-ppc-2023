@@ -1,0 +1,23 @@
+Experiment,Subjid,Sound type,Specific cues,Freq ~ lottery,Lottery side,Lottery probs
+Muscimol,2152,Pure tone,"[2.49, 2.83, 3.23, 4.19, 7.04, 19.91] kHz",Positive mapping,Right,0.55
+Muscimol,2153,Pure tone,"[2.49, 2.83, 3.23, 4.19, 7.04, 19.91] kHz",Positive mapping,Right,0.5
+Muscimol,2154,Pure tone,"[2.49, 2.83, 3.23, 4.19, 7.04, 19.91] kHz",Positive mapping,Right,0.5
+Muscimol,2155,Pure tone,"[2.49, 2.83, 3.23, 4.19, 7.04, 19.91] kHz",Positive mapping,Right,0.5
+Muscimol,2156,Pure tone,"[2.49, 2.83, 3.23, 4.19, 7.04, 19.91] kHz",Positive mapping,Right,0.5
+Muscimol,2160,Pure tone,"[2.49, 2.83, 3.23, 4.19, 7.04, 19.91] kHz",Positive mapping,Left,0.5
+Muscimol,2165,Pure tone,"[2.49, 2.83, 3.23, 4.19, 7.04, 19.91] kHz",Positive mapping,Right,0.5
+Muscimol,2166,Pure tone,"[2.49, 2.83, 3.23, 4.19, 7.04, 19.91] kHz",Positive mapping,Right,0.6
+Opto,2172,Clicks (10kHz),"[28, 45, 60, 81, 110, 151] Hz",Positive mapping,Right,0.6
+Opto,2176,Clicks (9.5kHz),"[28, 45, 60, 81, 110, 151] Hz",Positive mapping,Right,0.55
+Opto,2177,Clicks (9.5kHz),"[28, 45, 60, 81, 110, 151] Hz",Positive mapping,Left,0.55
+Opto,2180,Clicks (10kHz),"[28, 45, 60, 81, 110, 151] Hz",Positive mapping,Right,0.6
+Opto,2182,Clicks (10kHz),"[212, 195, 180, 159, 130, 89] Hz",Negative mapping,Right,0.6
+Opto,2225,Clicks (11kHz),"[28, 45, 60, 81, 110, 151] Hz",Positive mapping,Left,0.7
+Opto,2228,Clicks (11kHz),"[28, 45, 60, 81, 110, 151] Hz",Positive mapping,Left,0.7
+Opto,2240,Clicks (11kHz),"[28, 45, 60, 81, 110, 151] Hz",Positive mapping,Right,0.7
+Ephys,2224,Clicks (10kHz),"[28, 45, 60, 81, 110, 151] Hz",Positive mapping,Left,0.6
+Ephys,2244,Clicks (11.5kHz),"[28, 45, 60, 81, 110, 151] Hz",Positive mapping,Right,0.75
+Ephys,2238,Clicks (11KHz),"[212, 195, 180, 159, 130, 89] Hz",Negative mapping,Right,0.7
+Ephys,2261,Clicks (9kHz),"[28, 45, 60, 81, 110, 151] Hz",Positive mapping,Left,0.5
+Ephys,2263,Clicks (11KHz),"[212, 195, 180, 159, 130, 89] Hz",Negative mapping,Left,0.7
+Ephys,2264,Clicks (11kHz),"[28, 45, 60, 81, 110, 151] Hz",Positive mapping,Right,0.7

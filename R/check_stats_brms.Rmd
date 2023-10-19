@@ -1,0 +1,638 @@
+
+Check stats for brms models
+Chaofei 2023.5.13
+
+```{r include=F}
+#source('figure_perturbation.R')
+library(brms)
+load('brms_fit.RData')
+```
+
+# Bi opto
+## test for bi opto delta raw_rho
+```{r echo=T, comment=NA}
+
+hyp_opto_rho <- hypothesis(bi_opto_cdf, "exp(logrho_Intercept + logrho_dose) - exp(logrho_Intercept) < 0", alpha = 0.025)
+hyp_opto_rho
+plot(hyp_opto_rho)
+```
+
+## bi opto logrho_dose
+```{r echo=T, comment=NA}
+
+hyp_opto_rho_dose <- hypothesis(bi_opto_cdf, "logrho_dose < 0", alpha = 0.025)
+hyp_opto_rho_dose
+plot(hyp_opto_rho_dose)
+```
+
+
+## test for bi opto delta raw noise
+```{r echo=T, comment=NA}
+
+hyp_opto_noise <- hypothesis(bi_opto_cdf, "exp(noise_Intercept + noise_dose) - exp(noise_Intercept) > 0", alpha = 0.025)
+hyp_opto_noise
+plot(hyp_opto_noise)
+```
+
+
+## bi opto lognoise_dose
+```{r echo=T, comment=NA}
+
+hyp_opto_noise_dose <- hypothesis(bi_opto_cdf, "noise_dose > 0", alpha = 0.025)
+hyp_opto_noise_dose
+plot(hyp_opto_noise_dose)
+```
+
+
+## test for bi opto delta omega rational
+```{r echo=T, comment=NA}
+
+hyp_opto_omega_rational <- hypothesis(bi_opto_cdf, "inv_logit(omega1_Intercept + omega1_dose) - inv_logit(omega1_Intercept) < 0", alpha = 0.025)
+hyp_opto_omega_rational
+plot(hyp_opto_omega_rational)
+```
+
+## bi opto omega1_dose
+```{r echo=T, comment=NA}
+
+hyp_opto_omega1_dose <- hypothesis(bi_opto_cdf, "omega1_dose < 0", alpha = 0.025)
+hyp_opto_omega1_dose
+plot(hyp_opto_omega1_dose)
+```
+
+
+## test for bi opto delta omega lottery
+```{r echo=T, comment=NA}
+
+hyp_opto_omega_lottery <- hypothesis(bi_opto_cdf, "(1- inv_logit(omega1_Intercept + omega1_dose))*inv_logit(omega2_Intercept + omega2_dose) - (1- inv_logit(omega1_Intercept))*inv_logit(omega2_Intercept) < 0", alpha = 0.025)
+hyp_opto_omega_lottery
+plot(hyp_opto_omega_lottery)
+```
+
+
+## bi opto omega2_dose
+```{r echo=T, comment=NA}
+
+hyp_opto_omega2_dose <- hypothesis(bi_opto_cdf, "omega2_dose < 0", alpha = 0.025)
+hyp_opto_omega2_dose
+plot(hyp_opto_omega2_dose)
+```
+
+## test for bi opto delta omega surebet
+```{r echo=T, comment=NA}
+
+hyp_opto_omega_surebet <- hypothesis(bi_opto_cdf, "(1- inv_logit(omega1_Intercept + omega1_dose))*(1-inv_logit(omega2_Intercept + omega2_dose)) - (1- inv_logit(omega1_Intercept))*(1-inv_logit(omega2_Intercept)) > 0", alpha = 0.025)
+hyp_opto_omega_surebet
+plot(hyp_opto_omega_surebet)
+```
+
+# unilateral opto
+## test for uni opto delta raw_rho
+```{r echo=T, comment=NA}
+
+hyp_opto_rho <- hypothesis(uni_opto_cdf, "exp(logrho_Intercept + logrho_dose) - exp(logrho_Intercept) < 0", alpha = 0.025)
+hyp_opto_rho
+plot(hyp_opto_rho)
+```
+
+## uni opto logrho_dose
+```{r echo=T, comment=NA}
+
+hyp_opto_rho_dose <- hypothesis(uni_opto_cdf, "logrho_dose < 0", alpha = 0.025)
+hyp_opto_rho_dose
+plot(hyp_opto_rho_dose)
+```
+
+
+## test for uni opto delta raw noise
+```{r echo=T, comment=NA}
+
+hyp_opto_noise <- hypothesis(uni_opto_cdf, "exp(noise_Intercept + noise_dose) - exp(noise_Intercept) > 0", alpha = 0.025)
+hyp_opto_noise
+plot(hyp_opto_noise)
+```
+
+
+## uni opto lognoise_dose
+```{r echo=T, comment=NA}
+
+hyp_opto_noise_dose <- hypothesis(uni_opto_cdf, "noise_dose > 0", alpha = 0.025)
+hyp_opto_noise_dose
+plot(hyp_opto_noise_dose)
+```
+
+
+## test for uni opto delta omega rational
+```{r echo=T, comment=NA}
+
+hyp_opto_omega_rational <- hypothesis(uni_opto_cdf, "inv_logit(omega1_Intercept + omega1_dose) - inv_logit(omega1_Intercept) < 0", alpha = 0.025)
+hyp_opto_omega_rational
+plot(hyp_opto_omega_rational)
+```
+
+## uni opto omega1_dose
+```{r echo=T, comment=NA}
+
+hyp_opto_omega1_dose <- hypothesis(uni_opto_cdf, "omega1_dose < 0", alpha = 0.025)
+hyp_opto_omega1_dose
+plot(hyp_opto_omega1_dose)
+```
+
+
+## test for uni opto delta omega lottery
+```{r echo=T, comment=NA}
+
+hyp_opto_omega_lottery <- hypothesis(uni_opto_cdf, "(1- inv_logit(omega1_Intercept + omega1_dose))*inv_logit(omega2_Intercept + omega2_dose) - (1- inv_logit(omega1_Intercept))*inv_logit(omega2_Intercept) < 0", alpha = 0.025)
+hyp_opto_omega_lottery
+plot(hyp_opto_omega_lottery)
+```
+
+
+## uni opto omega2_dose
+```{r echo=T, comment=NA}
+
+hyp_opto_omega2_dose <- hypothesis(uni_opto_cdf, "omega2_dose < 0", alpha = 0.025)
+hyp_opto_omega2_dose
+plot(hyp_opto_omega2_dose)
+```
+
+## test for uni opto delta omega surebet
+```{r echo=T, comment=NA}
+
+hyp_opto_omega_surebet <- hypothesis(uni_opto_cdf, "(1- inv_logit(omega1_Intercept + omega1_dose))*(1-inv_logit(omega2_Intercept + omega2_dose)) - (1- inv_logit(omega1_Intercept))*(1-inv_logit(omega2_Intercept)) > 0", alpha = 0.025)
+hyp_opto_omega_surebet
+plot(hyp_opto_omega_surebet)
+```
+
+# bilateral fof muscimol
+## test for bi muscimol delta raw rho
+```{r echo=T, comment=NA}
+
+hyp_muscimol_rho <- hypothesis(bi_fof_muscimol_cdf, "exp(logrho_Intercept + logrho_dose) - exp(logrho_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_rho
+plot(hyp_muscimol_rho)
+```
+
+## bi muscimol logrho_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_rho_dose <- hypothesis(bi_fof_muscimol_cdf, "logrho_dose < 0", alpha = 0.025)
+hyp_muscimol_rho_dose
+plot(hyp_muscimol_rho_dose)
+```
+
+
+## test for bi muscimol delta raw noise
+```{r echo=T, comment=NA}
+
+hyp_muscimol_noise <- hypothesis(bi_fof_muscimol_cdf, "exp(noise_Intercept + noise_dose) - exp(noise_Intercept) > 0", alpha = 0.025)
+hyp_muscimol_noise
+plot(hyp_muscimol_noise)
+```
+
+## bi muscimol lognoise_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_noise_dose <- hypothesis(bi_fof_muscimol_cdf, "noise_dose > 0", alpha = 0.025)
+hyp_muscimol_noise_dose
+plot(hyp_muscimol_noise_dose)
+```
+
+
+## test for bi muscimol delta rational
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_rational <- hypothesis(bi_fof_muscimol_cdf, "inv_logit(omega1_Intercept + omega1_dose) - inv_logit(omega1_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_omega_rational
+plot(hyp_muscimol_omega_rational)
+```
+
+## bi muscimol omega1_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega1_dose <- hypothesis(bi_fof_muscimol_cdf, "omega1_dose < 0", alpha = 0.025)
+hyp_muscimol_omega1_dose
+plot(hyp_muscimol_omega1_dose)
+```
+
+
+## test for bi muscimol delta lottery
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_lottery <- hypothesis(bi_fof_muscimol_cdf, "(1- inv_logit(omega1_Intercept + omega1_dose))*inv_logit(omega2_Intercept + omega2_dose) - (1- inv_logit(omega1_Intercept))*inv_logit(omega2_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_omega_lottery
+plot(hyp_muscimol_omega_lottery)
+```
+
+
+## bi muscimol omega2_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega2_dose <- hypothesis(bi_fof_muscimol_cdf, "omega2_dose < 0", alpha = 0.025)
+hyp_muscimol_omega2_dose
+plot(hyp_muscimol_omega2_dose)
+```
+
+## test for bi muscimol delta surebet
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_surebet <- hypothesis(bi_fof_muscimol_cdf, "(1- inv_logit(omega1_Intercept + omega1_dose))*(1-inv_logit(omega2_Intercept + omega2_dose)) - (1- inv_logit(omega1_Intercept))*(1-inv_logit(omega2_Intercept)) > 0", alpha = 0.025)
+hyp_muscimol_omega_surebet
+plot(hyp_muscimol_omega_surebet)
+```
+
+# unilateral fof muscimol
+## test for uni muscimol delta raw rho
+```{r echo=T, comment=NA}
+
+hyp_muscimol_rho <- hypothesis(uni_fof_muscimol_cdf, "exp(logrho_Intercept + logrho_dose) - exp(logrho_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_rho
+plot(hyp_muscimol_rho)
+```
+
+## uni muscimol logrho_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_rho_dose <- hypothesis(uni_fof_muscimol_cdf, "logrho_dose < 0", alpha = 0.025)
+hyp_muscimol_rho_dose
+plot(hyp_muscimol_rho_dose)
+```
+
+
+## test for uni muscimol delta raw noise
+```{r echo=T, comment=NA}
+
+hyp_muscimol_noise <- hypothesis(uni_fof_muscimol_cdf, "exp(noise_Intercept + noise_dose) - exp(noise_Intercept) > 0", alpha = 0.025)
+hyp_muscimol_noise
+plot(hyp_muscimol_noise)
+```
+
+## uni muscimol lognoise_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_noise_dose <- hypothesis(uni_fof_muscimol_cdf, "noise_dose > 0", alpha = 0.025)
+hyp_muscimol_noise_dose
+plot(hyp_muscimol_noise_dose)
+```
+
+
+## test for uni muscimol delta rational
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_rational <- hypothesis(uni_fof_muscimol_cdf, "inv_logit(omega1_Intercept + omega1_dose) - inv_logit(omega1_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_omega_rational
+plot(hyp_muscimol_omega_rational)
+```
+
+## uni muscimol omega1_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega1_dose <- hypothesis(uni_fof_muscimol_cdf, "omega1_dose < 0", alpha = 0.025)
+hyp_muscimol_omega1_dose
+plot(hyp_muscimol_omega1_dose)
+```
+
+
+## test for uni muscimol delta lottery
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_lottery <- hypothesis(uni_fof_muscimol_cdf, "(1- inv_logit(omega1_Intercept + omega1_dose))*inv_logit(omega2_Intercept + omega2_dose) - (1- inv_logit(omega1_Intercept))*inv_logit(omega2_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_omega_lottery
+plot(hyp_muscimol_omega_lottery)
+```
+
+
+## uni muscimol omega2_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega2_dose <- hypothesis(uni_fof_muscimol_cdf, "omega2_dose < 0", alpha = 0.025)
+hyp_muscimol_omega2_dose
+plot(hyp_muscimol_omega2_dose)
+```
+
+## test for uni muscimol delta surebet
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_surebet <- hypothesis(uni_fof_muscimol_cdf, "(1- inv_logit(omega1_Intercept + omega1_dose))*(1-inv_logit(omega2_Intercept + omega2_dose)) - (1- inv_logit(omega1_Intercept))*(1-inv_logit(omega2_Intercept)) > 0", alpha = 0.025)
+hyp_muscimol_omega_surebet
+plot(hyp_muscimol_omega_surebet)
+```
+
+
+# check the ppc data
+
+## test for bi muscimol delta raw rho
+```{r echo=T, comment=NA}
+
+hyp_muscimol_rho <- hypothesis(bi_ppc_muscimol_cdf_40, "exp(logrho_Intercept + logrho_dose) - exp(logrho_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_rho
+plot(hyp_muscimol_rho)
+```
+
+## bi muscimol logrho_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_rho_dose <- hypothesis(bi_ppc_muscimol_cdf_40, "logrho_dose < 0", alpha = 0.025)
+hyp_muscimol_rho_dose
+plot(hyp_muscimol_rho_dose)
+```
+
+
+## test for bi muscimol delta raw noise
+```{r echo=T, comment=NA}
+
+hyp_muscimol_noise <- hypothesis(bi_ppc_muscimol_cdf_40, "exp(noise_Intercept + noise_dose) - exp(noise_Intercept) > 0", alpha = 0.025)
+hyp_muscimol_noise
+plot(hyp_muscimol_noise)
+```
+
+## bi muscimol lognoise_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_noise_dose <- hypothesis(bi_ppc_muscimol_cdf_40, "noise_dose > 0", alpha = 0.025)
+hyp_muscimol_noise_dose
+plot(hyp_muscimol_noise_dose)
+```
+
+
+## test for bi muscimol delta rational
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_rational <- hypothesis(bi_ppc_muscimol_cdf_40, "inv_logit(omega1_Intercept + omega1_dose) - inv_logit(omega1_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_omega_rational
+plot(hyp_muscimol_omega_rational)
+```
+
+## bi muscimol omega1_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega1_dose <- hypothesis(bi_ppc_muscimol_cdf_40, "omega1_dose < 0", alpha = 0.025)
+hyp_muscimol_omega1_dose
+plot(hyp_muscimol_omega1_dose)
+```
+
+
+## test for bi muscimol delta lottery
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_lottery <- hypothesis(bi_ppc_muscimol_cdf_40, "(1- inv_logit(omega1_Intercept + omega1_dose))*inv_logit(omega2_Intercept + omega2_dose) - (1- inv_logit(omega1_Intercept))*inv_logit(omega2_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_omega_lottery
+plot(hyp_muscimol_omega_lottery)
+```
+
+
+## bi muscimol omega2_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega2_dose <- hypothesis(bi_ppc_muscimol_cdf_40, "omega2_dose < 0", alpha = 0.025)
+hyp_muscimol_omega2_dose
+plot(hyp_muscimol_omega2_dose)
+```
+
+## test for bi muscimol delta surebet
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_surebet <- hypothesis(bi_ppc_muscimol_cdf_40, "(1- inv_logit(omega1_Intercept + omega1_dose))*(1-inv_logit(omega2_Intercept + omega2_dose)) - (1- inv_logit(omega1_Intercept))*(1-inv_logit(omega2_Intercept)) > 0", alpha = 0.025)
+hyp_muscimol_omega_surebet
+plot(hyp_muscimol_omega_surebet)
+```
+
+# unilateral fof muscimol
+## test for uni muscimol delta raw rho
+```{r echo=T, comment=NA}
+
+hyp_muscimol_rho <- hypothesis(uni_ppc_muscimol_cdf_40, "exp(logrho_Intercept + logrho_dose) - exp(logrho_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_rho
+plot(hyp_muscimol_rho)
+```
+
+## uni muscimol logrho_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_rho_dose <- hypothesis(uni_ppc_muscimol_cdf_40, "logrho_dose < 0", alpha = 0.025)
+hyp_muscimol_rho_dose
+plot(hyp_muscimol_rho_dose)
+```
+
+
+## test for uni muscimol delta raw noise
+```{r echo=T, comment=NA}
+
+hyp_muscimol_noise <- hypothesis(uni_ppc_muscimol_cdf_40, "exp(noise_Intercept + noise_dose) - exp(noise_Intercept) > 0", alpha = 0.025)
+hyp_muscimol_noise
+plot(hyp_muscimol_noise)
+```
+
+## uni muscimol lognoise_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_noise_dose <- hypothesis(uni_ppc_muscimol_cdf_40, "noise_dose > 0", alpha = 0.025)
+hyp_muscimol_noise_dose
+plot(hyp_muscimol_noise_dose)
+```
+
+
+## test for uni muscimol delta rational
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_rational <- hypothesis(uni_ppc_muscimol_cdf_40, "inv_logit(omega1_Intercept + omega1_dose) - inv_logit(omega1_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_omega_rational
+plot(hyp_muscimol_omega_rational)
+```
+
+## uni muscimol omega1_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega1_dose <- hypothesis(uni_ppc_muscimol_cdf_40, "omega1_dose < 0", alpha = 0.025)
+hyp_muscimol_omega1_dose
+plot(hyp_muscimol_omega1_dose)
+```
+
+
+## test for uni muscimol delta lottery
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_lottery <- hypothesis(uni_ppc_muscimol_cdf_40, "(1- inv_logit(omega1_Intercept + omega1_dose))*inv_logit(omega2_Intercept + omega2_dose) - (1- inv_logit(omega1_Intercept))*inv_logit(omega2_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_omega_lottery
+plot(hyp_muscimol_omega_lottery)
+```
+
+
+## uni muscimol omega2_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega2_dose <- hypothesis(uni_ppc_muscimol_cdf_40, "omega2_dose < 0", alpha = 0.025)
+hyp_muscimol_omega2_dose
+plot(hyp_muscimol_omega2_dose)
+```
+
+## test for uni muscimol delta surebet
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_surebet <- hypothesis(uni_ppc_muscimol_cdf_40, "(1- inv_logit(omega1_Intercept + omega1_dose))*(1-inv_logit(omega2_Intercept + omega2_dose)) - (1- inv_logit(omega1_Intercept))*(1-inv_logit(omega2_Intercept)) > 0", alpha = 0.025)
+hyp_muscimol_omega_surebet
+plot(hyp_muscimol_omega_surebet)
+```
+
+# chech the whole sessions for the PPC data
+```{r echo=T, comment=NA}
+
+hyp_muscimol_rho <- hypothesis(bi_ppc_muscimol_cdf, "exp(logrho_Intercept + logrho_dose) - exp(logrho_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_rho
+plot(hyp_muscimol_rho)
+```
+
+## bi muscimol logrho_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_rho_dose <- hypothesis(bi_ppc_muscimol_cdf, "logrho_dose < 0", alpha = 0.025)
+hyp_muscimol_rho_dose
+plot(hyp_muscimol_rho_dose)
+```
+
+
+## test for bi muscimol delta raw noise
+```{r echo=T, comment=NA}
+
+hyp_muscimol_noise <- hypothesis(bi_ppc_muscimol_cdf, "exp(noise_Intercept + noise_dose) - exp(noise_Intercept) > 0", alpha = 0.025)
+hyp_muscimol_noise
+plot(hyp_muscimol_noise)
+```
+
+## bi muscimol lognoise_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_noise_dose <- hypothesis(bi_ppc_muscimol_cdf, "noise_dose > 0", alpha = 0.025)
+hyp_muscimol_noise_dose
+plot(hyp_muscimol_noise_dose)
+```
+
+
+## test for bi muscimol delta rational
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_rational <- hypothesis(bi_ppc_muscimol_cdf, "inv_logit(omega1_Intercept + omega1_dose) - inv_logit(omega1_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_omega_rational
+plot(hyp_muscimol_omega_rational)
+```
+
+## bi muscimol omega1_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega1_dose <- hypothesis(bi_ppc_muscimol_cdf, "omega1_dose < 0", alpha = 0.025)
+hyp_muscimol_omega1_dose
+plot(hyp_muscimol_omega1_dose)
+```
+
+
+## test for bi muscimol delta lottery
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_lottery <- hypothesis(bi_ppc_muscimol_cdf, "(1- inv_logit(omega1_Intercept + omega1_dose))*inv_logit(omega2_Intercept + omega2_dose) - (1- inv_logit(omega1_Intercept))*inv_logit(omega2_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_omega_lottery
+plot(hyp_muscimol_omega_lottery)
+```
+
+
+## bi muscimol omega2_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega2_dose <- hypothesis(bi_ppc_muscimol_cdf, "omega2_dose < 0", alpha = 0.025)
+hyp_muscimol_omega2_dose
+plot(hyp_muscimol_omega2_dose)
+```
+
+## test for bi muscimol delta surebet
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_surebet <- hypothesis(bi_ppc_muscimol_cdf, "(1- inv_logit(omega1_Intercept + omega1_dose))*(1-inv_logit(omega2_Intercept + omega2_dose)) - (1- inv_logit(omega1_Intercept))*(1-inv_logit(omega2_Intercept)) > 0", alpha = 0.025)
+hyp_muscimol_omega_surebet
+plot(hyp_muscimol_omega_surebet)
+```
+
+# unilateral fof muscimol
+## test for uni muscimol delta raw rho
+```{r echo=T, comment=NA}
+
+hyp_muscimol_rho <- hypothesis(uni_ppc_muscimol_cdf, "exp(logrho_Intercept + logrho_dose) - exp(logrho_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_rho
+plot(hyp_muscimol_rho)
+```
+
+## uni muscimol logrho_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_rho_dose <- hypothesis(uni_ppc_muscimol_cdf, "logrho_dose < 0", alpha = 0.025)
+hyp_muscimol_rho_dose
+plot(hyp_muscimol_rho_dose)
+```
+
+
+## test for uni muscimol delta raw noise
+```{r echo=T, comment=NA}
+
+hyp_muscimol_noise <- hypothesis(uni_ppc_muscimol_cdf, "exp(noise_Intercept + noise_dose) - exp(noise_Intercept) > 0", alpha = 0.025)
+hyp_muscimol_noise
+plot(hyp_muscimol_noise)
+```
+
+## uni muscimol lognoise_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_noise_dose <- hypothesis(uni_ppc_muscimol_cdf, "noise_dose > 0", alpha = 0.025)
+hyp_muscimol_noise_dose
+plot(hyp_muscimol_noise_dose)
+```
+
+
+## test for uni muscimol delta rational
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_rational <- hypothesis(uni_ppc_muscimol_cdf, "inv_logit(omega1_Intercept + omega1_dose) - inv_logit(omega1_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_omega_rational
+plot(hyp_muscimol_omega_rational)
+```
+
+## uni muscimol omega1_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega1_dose <- hypothesis(uni_ppc_muscimol_cdf, "omega1_dose < 0", alpha = 0.025)
+hyp_muscimol_omega1_dose
+plot(hyp_muscimol_omega1_dose)
+```
+
+
+## test for uni muscimol delta lottery
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_lottery <- hypothesis(uni_ppc_muscimol_cdf, "(1- inv_logit(omega1_Intercept + omega1_dose))*inv_logit(omega2_Intercept + omega2_dose) - (1- inv_logit(omega1_Intercept))*inv_logit(omega2_Intercept) < 0", alpha = 0.025)
+hyp_muscimol_omega_lottery
+plot(hyp_muscimol_omega_lottery)
+```
+
+
+## uni muscimol omega2_dose
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega2_dose <- hypothesis(uni_ppc_muscimol_cdf, "omega2_dose < 0", alpha = 0.025)
+hyp_muscimol_omega2_dose
+plot(hyp_muscimol_omega2_dose)
+```
+
+## test for uni muscimol delta surebet
+```{r echo=T, comment=NA}
+
+hyp_muscimol_omega_surebet <- hypothesis(uni_ppc_muscimol_cdf, "(1- inv_logit(omega1_Intercept + omega1_dose))*(1-inv_logit(omega2_Intercept + omega2_dose)) - (1- inv_logit(omega1_Intercept))*(1-inv_logit(omega2_Intercept)) > 0", alpha = 0.025)
+hyp_muscimol_omega_surebet
+plot(hyp_muscimol_omega_surebet)
+```
+
+
+
+
+
+
+
+
+
+
