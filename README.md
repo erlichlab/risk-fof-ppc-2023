@@ -27,7 +27,7 @@ git clone https://github.com/erlichlab/risk-fof-ppc-2023
 
 ### Generating the behavior and the three-agent model related analysis and plots
 
-Download the model fits from the following link: https://figshare.com/s/bce33318aac210a8279c
+Download the model fits from the following link: https://rdr.ucl.ac.uk/ndownloader/files/42774595
 
 Move the `brms_model_fits.RData` file to the `risk-fof-ppc-2023` root directory
 
