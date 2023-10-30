@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.19
+# v0.19.29
 
 using Markdown
 using InteractiveUtils
@@ -32,34 +32,6 @@ We get our data from the database. First, the behavior and then the cells associ
 We tranform the data a little using `risky_sess`. 
 """
 
-# ╔═╡ 7d95574a-d9d8-475e-a442-b71a4baabd06
-function augment(df, tpt)
-	mags = unique(df.lottery_mag)
-	test=[]
-	train=[]
-	for m ∈ mags
-		ind = findall(df.lottery_mag.==m)
-		if length(ind) < 2
-			return nothing
-		end
-		a, b= split_eo(shuffle(ind))
-		a = sample(a, tpt)
-		b = sample(b, tpt)
-		push!(train, a)
-		push!(test, b)
-	end
-	train = vcat(train...)
-	test = vcat(test...)
-	traindf = df[train, :]
-	testdf = df[test, :]
-	traindf[:,"is_test"] .= false
-	testdf[:, "is_test"] .= true
-	sort!(testdf, :lottery_mag)
-	sort!(traindf, :lottery_mag)
-	(traindf.lottery_mag, traindf.zcounts, testdf.zcounts)
-	
-end
-
 # ╔═╡ ca2ac176-2dc2-4aa0-8424-8eb99317dd30
 begin
 	n_perms = 50
@@ -86,19 +58,6 @@ md"# Code Appendix"
 # ╔═╡ fa53c42f-0602-4045-bdda-eabf1f07e587
 PlutoUI.TableOfContents(depth=6, include_definitions=true)
 
-# ╔═╡ 63931d3c-4c84-4918-8ccc-8da48a293760
-"""
-Cleaning up the raw data.
-"""
-function risky_sess(df) 
-	# First group by sessid to get the lottery_sound_time correctly
-	D = Dict{Int, Vector{Float32}}()
-	for s ∈ unique(df.sessid)
-		D[s]=lottery_sound_onset(@view df.parsed_events[df.sessid .== s])
-	end
-	(df, D)
-end
-
 # ╔═╡ 65a600a0-0e21-4001-b263-7b8ea08c3201
 """
 Take a list of raw parsed events for a session and extract the sound onset.
@@ -112,6 +71,19 @@ function lottery_sound_onset(raw_peh_list)
 		isnothing(ls) ? NaN : ls + x["StartTime"]
 	end
 	[event_time(p) for p in pe_list ] .- session_start_time
+end
+
+# ╔═╡ 63931d3c-4c84-4918-8ccc-8da48a293760
+"""
+Cleaning up the raw data.
+"""
+function risky_sess(df) 
+	# First group by sessid to get the lottery_sound_time correctly
+	D = Dict{Int, Vector{Float32}}()
+	for s ∈ unique(df.sessid)
+		D[s]=lottery_sound_onset(@view df.parsed_events[df.sessid .== s])
+	end
+	(df, D)
 end
 
 # ╔═╡ f7fa6c13-b1b0-4073-a13f-4c902821c2c3
@@ -162,6 +134,151 @@ get_test_and_train(cellid;trials_per_type=20) = begin
 	end
 	nrow(thisdf) < 20 && return nothing
 	augment(thisdf, trials_per_type)
+end
+
+# ╔═╡ 6b12563e-4bdf-4dbf-8c63-c52adef1f5be
+"""
+`shuffle(c)`
+A silly function that shuffles the order of a collection
+"""
+shuffle(ind) = sample(ind, length(ind), replace=false)
+
+# ╔═╡ 37128bd5-4ee4-459f-b0a9-992586819a3b
+"""
+`split(a)`
+A silly small function that splits a vector by odd and even indices.
+"""
+function split_eo(a)
+		o = @view a[1:2:end]
+		e = @view a[2:2:end]
+	(o,e)
+end
+		
+
+# ╔═╡ 7d95574a-d9d8-475e-a442-b71a4baabd06
+function augment(df, tpt)
+	mags = unique(df.lottery_mag)
+	test=[]
+	train=[]
+	for m ∈ mags
+		ind = findall(df.lottery_mag.==m)
+		if length(ind) < 2
+			return nothing
+		end
+		a, b= split_eo(shuffle(ind))
+		a = sample(a, tpt)
+		b = sample(b, tpt)
+		push!(train, a)
+		push!(test, b)
+	end
+	train = vcat(train...)
+	test = vcat(test...)
+	traindf = df[train, :]
+	testdf = df[test, :]
+	traindf[:,"is_test"] .= false
+	testdf[:, "is_test"] .= true
+	sort!(testdf, :lottery_mag)
+	sort!(traindf, :lottery_mag)
+	(traindf.lottery_mag, traindf.zcounts, testdf.zcounts)
+	
+end
+
+# ╔═╡ 2b3b917c-01d9-4ac9-bd47-bf4c95167b76
+"""
+`sample_trial(cellid, lottery_mag, is_test)`
+
+Sample a single zscored spike count from a cell for a given lottery_mag and partition.
+
+Deprecated.
+"""
+function sample_trial(cellid, lottery_mag, test::Bool)
+	@chain popdf_dict[cellid] begin
+		@subset(:chose_lottery, :lottery_mag.==lottery_mag, :is_test.==test; view=true)
+		sample(_.zcounts)
+	end
+end
+
+# ╔═╡ 938d5772-44be-485c-9998-f8ba59ed8ac9
+"""
+Check that the simulation has enough data
+Deprecated.
+"""
+enough_data(df) = begin
+@chain df begin
+	@subset(:chose_lottery)
+	@by([:lottery_mag], :count=length(:lottery_mag))
+	minimum(_.count) > 1
+end
+end
+
+
+# ╔═╡ aeadd2e0-b7a4-41aa-b816-b2cc7bba5736
+sample_trial(cellid, lottery_mag, test::Int) = sample_trial(cellid, lottery_mag, test==1)
+
+# ╔═╡ 6d397f71-3311-4c58-bbd8-52552700dd5f
+
+
+# ╔═╡ 9f1f32b7-818d-4a1c-8731-da1f8ab5df32
+"""
+`query(SQL)`
+
+make it easier to do stuff with the DB
+"""
+query(x::AbstractString; c=dbc()) = DataFrame(MySQL.DBInterface.execute(c, x, mysql_date_and_time=true))
+
+# ╔═╡ e9ca3ef3-ffff-4616-8a80-528f91694925
+query("explain met.animals")
+
+# ╔═╡ 30758904-f0d0-4543-8cf3-89b71c1afcdf
+"""
+	Just the SQL query that joins three tables to get the behavioral data.
+"""
+fetch_behavior_db(;behavioral_file="beh.JLD2") = begin
+	if isfile(behavioral_file)
+		@info "Loading from $behavioral_file"
+		read(jldopen(behavioral_file),"df")
+	else
+		df = query("select * from proto.riskychoice_view join risk.riskephys using (sessid) join beh.parsed_events using (trialid)")
+		jldsave(behavioral_file; df)
+		df
+	end
+end
+
+# ╔═╡ 2226f266-50b6-4873-a9ee-9962f2c965f7
+raw_behavior_df = fetch_behavior_db();
+
+# ╔═╡ 5dc6e010-6763-425f-9673-5e8c366531de
+length(unique(raw_behavior_df.sessid))
+
+# ╔═╡ 5ce21a4c-39f3-4ae6-90e1-152273ac3a53
+sessdf, ts = risky_sess(raw_behavior_df)
+
+# ╔═╡ 721a87b0-5851-414e-8b16-ddaaa0e47188
+"""
+	Just the SQL query that joins three tables to get the spikes.
+"""
+fetch_spikes_db(;spks_file="spks.JLD2") = begin
+	if isfile(spks_file)
+		@info "Loading from $spks_file"
+		read(jldopen(spks_file),"df")
+	else
+		df = query("select sessid, cellid, ts from phy.cellview join risk.riskephys using (sessid) join phy.spktimes using (cellid) where presence_ratio > 0.95 and firing_rate > 1 and snr_best_chan > 1.5")
+		jldsave(spks_file; df)
+		df
+	end
+end
+	
+
+# ╔═╡ adc9ee76-49c4-4bc0-a49e-bcec5e608924
+spks_df = fetch_spikes_db();
+
+# ╔═╡ 837c9a80-a4f3-4875-bfc3-cf48d013f0b8
+spk_dict = Dict(Int(r.cellid)=>reinterpret(Float64, r.ts) for r in eachrow(spks_df))	
+
+# ╔═╡ 981b47d2-e5bb-47e9-bd32-b953ce1a3a9c
+begin
+	popdf_dict = Dict(k=>get_test_and_train(k) for k in Int.(keys(spk_dict)))
+	filter!(p->(.!isnothing(last(p))), popdf_dict)
 end
 
 # ╔═╡ 72d51e88-ef93-4a12-a788-6ac37c065caf
@@ -249,127 +366,10 @@ let
 	f
 end
 
-# ╔═╡ 6b12563e-4bdf-4dbf-8c63-c52adef1f5be
-"""
-`shuffle(c)`
-A silly function that shuffles the order of a collection
-"""
-shuffle(ind) = sample(ind, length(ind), replace=false)
-
-# ╔═╡ 37128bd5-4ee4-459f-b0a9-992586819a3b
-"""
-`split(a)`
-A silly small function that splits a vector by odd and even indices.
-"""
-function split_eo(a)
-		o = @view a[1:2:end]
-		e = @view a[2:2:end]
-	(o,e)
-end
-		
-
-# ╔═╡ 2b3b917c-01d9-4ac9-bd47-bf4c95167b76
-"""
-`sample_trial(cellid, lottery_mag, is_test)`
-
-Sample a single zscored spike count from a cell for a given lottery_mag and partition.
-
-Deprecated.
-"""
-function sample_trial(cellid, lottery_mag, test::Bool)
-	@chain popdf_dict[cellid] begin
-		@subset(:chose_lottery, :lottery_mag.==lottery_mag, :is_test.==test; view=true)
-		sample(_.zcounts)
-	end
-end
-
-# ╔═╡ 938d5772-44be-485c-9998-f8ba59ed8ac9
-"""
-Check that the simulation has enough data
-Deprecated.
-"""
-enough_data(df) = begin
-@chain df begin
-	@subset(:chose_lottery)
-	@by([:lottery_mag], :count=length(:lottery_mag))
-	minimum(_.count) > 1
-end
-end
-
-
-# ╔═╡ aeadd2e0-b7a4-41aa-b816-b2cc7bba5736
-sample_trial(cellid, lottery_mag, test::Int) = sample_trial(cellid, lottery_mag, test==1)
-
-# ╔═╡ 30758904-f0d0-4543-8cf3-89b71c1afcdf
-"""
-	Just the SQL query that joins three tables to get the behavioral data.
-"""
-fetch_behavior_db(;behavioral_file="beh.JLD2") = begin
-	if isfile(behavioral_file)
-		@info "Loading from $behavioral_file"
-		read(jldopen(behavioral_file),"df")
-	else
-		df = query("select * from proto.riskychoice_view join risk.riskephys using (sessid) join beh.parsed_events using (trialid)")
-		jldsave(behavioral_file; df)
-		df
-	end
-end
-
-# ╔═╡ 2226f266-50b6-4873-a9ee-9962f2c965f7
-raw_behavior_df = fetch_behavior_db();
-
-# ╔═╡ 5dc6e010-6763-425f-9673-5e8c366531de
-length(unique(raw_behavior_df.sessid))
-
-# ╔═╡ 5ce21a4c-39f3-4ae6-90e1-152273ac3a53
-sessdf, ts = risky_sess(raw_behavior_df)
-
-# ╔═╡ 6d397f71-3311-4c58-bbd8-52552700dd5f
-
-
-# ╔═╡ 721a87b0-5851-414e-8b16-ddaaa0e47188
-"""
-	Just the SQL query that joins three tables to get the spikes.
-"""
-fetch_spikes_db(;spks_file="spks.JLD2") = begin
-	if isfile(spks_file)
-		@info "Loading from $spks_file"
-		read(jldopen(spks_file),"df")
-	else
-		df = query("select sessid, cellid, ts from phy.cellview join risk.riskephys using (sessid) join phy.spktimes using (cellid) where presence_ratio > 0.95 and firing_rate > 1 and snr_best_chan > 1.5")
-		jldsave(spks_file; df)
-		df
-	end
-end
-	
-
-# ╔═╡ adc9ee76-49c4-4bc0-a49e-bcec5e608924
-spks_df = fetch_spikes_db();
-
-# ╔═╡ 837c9a80-a4f3-4875-bfc3-cf48d013f0b8
-spk_dict = Dict(Int(r.cellid)=>reinterpret(Float64, r.ts) for r in eachrow(spks_df))	
-
-# ╔═╡ 981b47d2-e5bb-47e9-bd32-b953ce1a3a9c
-begin
-	popdf_dict = Dict(k=>get_test_and_train(k) for k in Int.(keys(spk_dict)))
-	filter!(p->(.!isnothing(last(p))), popdf_dict)
-end
-
 # ╔═╡ f07dbd54-8099-47f3-8516-bf3d0947c087
 md"""
 The Spearman rank correlation is quite high even for 32 cells. The decoding saturated around the true population ($(length(keys(spk_dict))) cells) at _r_ = $(round(mean(bigdf.Spearman[bigdf.n.==256]),sigdigits=3))
 """
-
-# ╔═╡ 9f1f32b7-818d-4a1c-8731-da1f8ab5df32
-"""
-`query(SQL)`
-
-make it easier to do stuff with the DB
-"""
-query(x::AbstractString; c=dbc()) = DataFrame(MySQL.DBInterface.execute(c, x, mysql_date_and_time=true))
-
-# ╔═╡ e9ca3ef3-ffff-4616-8a80-528f91694925
-query("explain met.animals")
 
 # ╔═╡ 67c70492-9592-420a-80b9-ea4f54a13247
 """
