@@ -1,14 +1,15 @@
 ### A Pluto.jl notebook ###
-# v0.19.25
+# v0.19.19
 
 using Markdown
 using InteractiveUtils
 
 # ╔═╡ 3d07d744-39a3-49d9-8c23-b14476aa9b6c
 begin
-	using MySQL, PlutoUI, AlgebraOfGraphics, CairoMakie, StatsBase, DataFrames, DataFramesMeta
+	using MySQL, PlutoUI, AlgebraOfGraphics, CairoMakie, StatsBase, DataFramesMeta
 	using CodecZlib, JSON3, MultivariateStats, GLM, CSV, JLD2
 	using ThreadsX
+	import Random
 end
 
 # ╔═╡ b609f26e-6e3b-46be-a666-b8ee1fa74eed
@@ -16,10 +17,10 @@ md"""
 # Population decoding of the lottery from the FOF
 
 Steps:
-1. Get the cellids and spikes from DB.
-2. Get the sessids and sessiondata from the DB
-3. Write a function that takes a cellid and returns a `train` and `test` vector.
-4. 
+2. Get the sessids and sessiondata from local files or the DB
+1. Get the cellids and spikes from local files or the DB.
+3. Extract fixation timestamps from the raw behavioral data
+4. Run the 
 """
 
 # ╔═╡ 3d6b1acd-ecc2-47ec-a7ac-eeb356de138c
@@ -31,13 +32,41 @@ We get our data from the database. First, the behavior and then the cells associ
 We tranform the data a little using `risky_sess`. 
 """
 
+# ╔═╡ 7d95574a-d9d8-475e-a442-b71a4baabd06
+function augment(df, tpt)
+	mags = unique(df.lottery_mag)
+	test=[]
+	train=[]
+	for m ∈ mags
+		ind = findall(df.lottery_mag.==m)
+		if length(ind) < 2
+			return nothing
+		end
+		a, b= split_eo(shuffle(ind))
+		a = sample(a, tpt)
+		b = sample(b, tpt)
+		push!(train, a)
+		push!(test, b)
+	end
+	train = vcat(train...)
+	test = vcat(test...)
+	traindf = df[train, :]
+	testdf = df[test, :]
+	traindf[:,"is_test"] .= false
+	testdf[:, "is_test"] .= true
+	sort!(testdf, :lottery_mag)
+	sort!(traindf, :lottery_mag)
+	(traindf.lottery_mag, traindf.zcounts, testdf.zcounts)
+	
+end
+
 # ╔═╡ ca2ac176-2dc2-4aa0-8424-8eb99317dd30
 begin
 	n_perms = 50
 md"""
-## Setup and run simulation
+## Setup and run
 	
-This is a little bit silly, but in order to check which cells / session have enough data, I created `popdf_dict` which uses the same function as the real simulation, but in the end we only use this to filter out the bad cells.
+This is a little bit silly, but in order to check which cells / session have enough data, I created `popdf_dict` which uses the same functions as the real analysis, but in the end we only use this to filter out the bad cells.
 
 The real work is done in `one_perm` and this function is called $(n_perms) times for every population size, with the results saved in `bigsim`.
 """
@@ -57,15 +86,17 @@ md"# Code Appendix"
 # ╔═╡ fa53c42f-0602-4045-bdda-eabf1f07e587
 PlutoUI.TableOfContents(depth=6, include_definitions=true)
 
-# ╔═╡ f7fa6c13-b1b0-4073-a13f-4c902821c2c3
+# ╔═╡ 63931d3c-4c84-4918-8ccc-8da48a293760
 """
-Convert the uint8 vector to json
+Cleaning up the raw data.
 """
-function peh(x) 
-	@chain String(Char.(x)) begin
-		replace("NaN"=>"null")
-		JSON3.read()
+function risky_sess(df) 
+	# First group by sessid to get the lottery_sound_time correctly
+	D = Dict{Int, Vector{Float32}}()
+	for s ∈ unique(df.sessid)
+		D[s]=lottery_sound_onset(@view df.parsed_events[df.sessid .== s])
 	end
+	(df, D)
 end
 
 # ╔═╡ 65a600a0-0e21-4001-b263-7b8ea08c3201
@@ -83,32 +114,139 @@ function lottery_sound_onset(raw_peh_list)
 	[event_time(p) for p in pe_list ] .- session_start_time
 end
 
-# ╔═╡ 63931d3c-4c84-4918-8ccc-8da48a293760
+# ╔═╡ f7fa6c13-b1b0-4073-a13f-4c902821c2c3
 """
-Cleaning up the raw data.
+Convert the uint8 vector to json
 """
-function risky_sess(df) 
-	# First group by sessid to get the lottery_sound_time correctly
-	D = Dict{Int, Vector{Float32}}()
-	for s ∈ unique(df.sessid)
-		D[s]=lottery_sound_onset(@view df.parsed_events[df.sessid .== s])
+function peh(x) 
+	@chain String(Char.(x)) begin
+		replace("NaN"=>"null")
+		JSON3.read()
 	end
-	(df, D)
 end
 
 # ╔═╡ be09dc1e-cf2e-11ed-115f-6b84480a2336
-begin
+dbc() = begin
 	user = "mime"
 	host = "ext.deneuro.org"
 	port = 3333
 	passwd = "marceau18"
-	dbc = MySQL.DBInterface.connect(
+	MySQL.DBInterface.connect(
 		MySQL.Connection,
 		host,user,passwd,
 		port=port
 
 		
 	)
+end
+
+# ╔═╡ b0203308-4eec-4349-9e72-2afaddecc49f
+"""
+`get_test_and_train(cellid)`
+For a given cellid make a data frame with the necessary information to do the decoding.
+"""
+get_test_and_train(cellid;trials_per_type=20) = begin
+	spks = spk_dict[cellid]
+	sessid = spks_df.sessid[spks_df.cellid .== cellid][1]
+	ref = ts[sessid]
+	thisdf = @chain sessdf begin
+		@subset(:sessid.==sessid)
+		@select(:lottery_mag,:subj_choice,:trialnum,:viol,:sessid,:subjid)
+		@transform(:cellid = cellid, 
+			:counts = count_spikes(ref, spks, start=0.5, stop=1.0),
+			:chose_lottery = :subj_choice .== "lottery")
+		@aside μ = mean(filter(isfinite, _.counts))
+		@aside sd = std(filter(isfinite, _.counts))
+		@transform(:zcounts = :counts .- μ ./ sd)
+		@subset(:viol .< 1, isfinite.(:zcounts))
+	end
+	nrow(thisdf) < 20 && return nothing
+	augment(thisdf, trials_per_type)
+end
+
+# ╔═╡ 72d51e88-ef93-4a12-a788-6ac37c065caf
+"""
+Run one permutation
+"""
+one_perm(; trials_per_type=20, n_cells=20) = begin
+	these_cells = sample(Int.(keys(popdf_dict)), n_cells, replace=true)
+	pop_list = [get_test_and_train(k; trials_per_type) for k in these_cells]
+	train = hcat(getindex.(pop_list,2)...)'
+	test = 	hcat(getindex.(pop_list,3)...)'
+	label = Float64.(pop_list[1][1])
+	rot = fit(PCA, train; maxoutdim=4)
+	rTrain = predict(rot, train)
+	rTest = predict(rot, test)
+	lm = fit(LinearModel, hcat(ones(6*trials_per_type), rTrain'), label)
+	y_hat = predict(lm, hcat(ones(6*trials_per_type), rTest'))
+	(cor(label,y_hat), label, y_hat)
+end
+
+# ╔═╡ ea1a49a6-7a03-46b6-ad13-c66a3de654ef
+bigsim = let 
+	Random.seed!(134)
+	D = Dict{Int,Any}()
+	for n_cells = 2 .^[5:11;]
+		D[n_cells] = ThreadsX.map(x->one_perm(;n_cells), 1:n_perms)
+	end
+	D
+end
+
+# ╔═╡ 343dfac7-823c-4918-8aa1-6fc0a0b4da26
+bigdf, bigD = let
+	l =[]
+	D = Dict()
+	for (k,v) in bigsim
+		tdf = DataFrame(;n=k, Pearson=first.(v))
+		tdf[:,"Spearman"] .= [corspearman(x[2],x[3]) for x in v]
+		tdf[:, "MSE"] .= [sum((x[2].-x[3]).^2) for x in v]
+		push!(l,tdf)
+		D["$k"]=hcat(getindex.(bigsim[k],3)...)
+	end
+	(vcat(l...), D)
+end
+
+# ╔═╡ 4271a374-cb26-432c-9a01-4ea9eafe9212
+let
+	axis = (width = 300, height = 300, 
+		xticks=log2.(unique(bigdf.n)), 
+		xtickformat = x->string.(Int.(2 .^ x)),
+		xticklabelrotation=π/6,
+		ygridvisible=true)
+	p=data(bigdf) * mapping(:n=>log2=>"# of cells", :Spearman=>"Spearman's r") * visual(BoxPlot)
+	draw(p;axis)
+end
+
+# ╔═╡ 43f985b4-5108-4fbc-9a81-59e7999762ba
+let
+	axis = (width = 300, height = 300, 
+		xticks=log2.(unique(bigdf.n)), 
+		xtickformat = x->string.(Int.(2 .^ x)),
+		xticklabelrotation=π/6,
+		ygridvisible=true)
+	p=data(bigdf) * mapping(:n=>log2=>"log₂(# of cells)", :Pearson=>"Pearson's r") * visual(BoxPlot)
+	draw(p;axis)
+end
+
+# ╔═╡ 406dfcf0-472f-4d52-af98-648b10259c1f
+CSV.write("/Users/jerlich/Downloads/fof_pop.csv", bigdf)
+
+# ╔═╡ a9a5c7ab-5fdb-4521-b1ea-df8f3226f334
+bigD["32"]
+
+# ╔═╡ 63f85be7-bd82-4331-b294-c7b7fe5812da
+JSON3.write("/Users/jerlich/Downloads/fof_pop.json",bigD)
+
+# ╔═╡ acf7f20b-fa1c-4d07-96b1-a15780edcfe0
+hcat(getindex.(bigsim[32],3)...)
+
+# ╔═╡ f2b0ec6f-fa02-49a4-81bd-be14dccc643f
+let 
+	f,ax,l1 = lines([0,32],[0,32])
+	scatter!(ax, bigsim[1024][1][2], bigsim[1024][44][3])
+	ax.xlabel= "Lottery Magnitute"
+	ax.ylabel="CV Estimate"
+	f
 end
 
 # ╔═╡ 6b12563e-4bdf-4dbf-8c63-c52adef1f5be
@@ -123,39 +261,26 @@ shuffle(ind) = sample(ind, length(ind), replace=false)
 `split(a)`
 A silly small function that splits a vector by odd and even indices.
 """
-function split(a)
+function split_eo(a)
 		o = @view a[1:2:end]
 		e = @view a[2:2:end]
 	(o,e)
 end
 		
 
-# ╔═╡ 7d95574a-d9d8-475e-a442-b71a4baabd06
-function augment(df, tpt)
-	mags = unique(df.lottery_mag)
-	test=[]
-	train=[]
-	for m ∈ mags
-		ind = findall(df.lottery_mag.==m)
-		if length(ind) < 2
-			return nothing
-		end
-		a, b= split(shuffle(ind))
-		a = sample(a, tpt)
-		b = sample(b, tpt)
-		push!(train, a)
-		push!(test, b)
+# ╔═╡ 2b3b917c-01d9-4ac9-bd47-bf4c95167b76
+"""
+`sample_trial(cellid, lottery_mag, is_test)`
+
+Sample a single zscored spike count from a cell for a given lottery_mag and partition.
+
+Deprecated.
+"""
+function sample_trial(cellid, lottery_mag, test::Bool)
+	@chain popdf_dict[cellid] begin
+		@subset(:chose_lottery, :lottery_mag.==lottery_mag, :is_test.==test; view=true)
+		sample(_.zcounts)
 	end
-	train = vcat(train...)
-	test = vcat(test...)
-	traindf = df[train, :]
-	testdf = df[test, :]
-	traindf[:,"is_test"] .= false
-	testdf[:, "is_test"] .= true
-	sort!(testdf, :lottery_mag)
-	sort!(traindf, :lottery_mag)
-	(traindf.lottery_mag, traindf.zcounts, testdf.zcounts)
-	
 end
 
 # ╔═╡ 938d5772-44be-485c-9998-f8ba59ed8ac9
@@ -175,40 +300,76 @@ end
 # ╔═╡ aeadd2e0-b7a4-41aa-b816-b2cc7bba5736
 sample_trial(cellid, lottery_mag, test::Int) = sample_trial(cellid, lottery_mag, test==1)
 
-# ╔═╡ 9f1f32b7-818d-4a1c-8731-da1f8ab5df32
-"""
-`query(SQL)`
-
-make it easier to do stuff with the DB
-"""
-query(x) = DataFrame(MySQL.DBInterface.execute(dbc, x, mysql_date_and_time=true))
-
 # ╔═╡ 30758904-f0d0-4543-8cf3-89b71c1afcdf
 """
 	Just the SQL query that joins three tables to get the behavioral data.
 """
-fetch_behavior_db() = query("select * from proto.riskychoice_view join risk.riskephys using (sessid) join beh.parsed_events using (trialid)")
-	
+fetch_behavior_db(;behavioral_file="beh.JLD2") = begin
+	if isfile(behavioral_file)
+		@info "Loading from $behavioral_file"
+		read(jldopen(behavioral_file),"df")
+	else
+		df = query("select * from proto.riskychoice_view join risk.riskephys using (sessid) join beh.parsed_events using (trialid)")
+		jldsave(behavioral_file; df)
+		df
+	end
+end
 
 # ╔═╡ 2226f266-50b6-4873-a9ee-9962f2c965f7
 raw_behavior_df = fetch_behavior_db();
 
+# ╔═╡ 5dc6e010-6763-425f-9673-5e8c366531de
+length(unique(raw_behavior_df.sessid))
+
 # ╔═╡ 5ce21a4c-39f3-4ae6-90e1-152273ac3a53
 sessdf, ts = risky_sess(raw_behavior_df)
+
+# ╔═╡ 6d397f71-3311-4c58-bbd8-52552700dd5f
+
 
 # ╔═╡ 721a87b0-5851-414e-8b16-ddaaa0e47188
 """
 	Just the SQL query that joins three tables to get the spikes.
 """
-fetch_spikes_db() = query("select sessid, cellid, ts from phy.cellview join risk.riskephys using (sessid) join phy.spktimes using (cellid) where presence_ratio > 0.95 and firing_rate > 1 and snr_best_chan > 1.5 ")
+fetch_spikes_db(;spks_file="spks.JLD2") = begin
+	if isfile(spks_file)
+		@info "Loading from $spks_file"
+		read(jldopen(spks_file),"df")
+	else
+		df = query("select sessid, cellid, ts from phy.cellview join risk.riskephys using (sessid) join phy.spktimes using (cellid) where presence_ratio > 0.95 and firing_rate > 1 and snr_best_chan > 1.5")
+		jldsave(spks_file; df)
+		df
+	end
+end
 	
 
 # ╔═╡ adc9ee76-49c4-4bc0-a49e-bcec5e608924
 spks_df = fetch_spikes_db();
 
 # ╔═╡ 837c9a80-a4f3-4875-bfc3-cf48d013f0b8
-spk_dict = Dict(Int(r.cellid)=>reinterpret(Float64, r.ts) for r in eachrow(spks_df))
-		
+spk_dict = Dict(Int(r.cellid)=>reinterpret(Float64, r.ts) for r in eachrow(spks_df))	
+
+# ╔═╡ 981b47d2-e5bb-47e9-bd32-b953ce1a3a9c
+begin
+	popdf_dict = Dict(k=>get_test_and_train(k) for k in Int.(keys(spk_dict)))
+	filter!(p->(.!isnothing(last(p))), popdf_dict)
+end
+
+# ╔═╡ f07dbd54-8099-47f3-8516-bf3d0947c087
+md"""
+The Spearman rank correlation is quite high even for 32 cells. The decoding saturated around the true population ($(length(keys(spk_dict))) cells) at _r_ = $(round(mean(bigdf.Spearman[bigdf.n.==256]),sigdigits=3))
+"""
+
+# ╔═╡ 9f1f32b7-818d-4a1c-8731-da1f8ab5df32
+"""
+`query(SQL)`
+
+make it easier to do stuff with the DB
+"""
+query(x::AbstractString; c=dbc()) = DataFrame(MySQL.DBInterface.execute(c, x, mysql_date_and_time=true))
+
+# ╔═╡ e9ca3ef3-ffff-4616-8a80-528f91694925
+query("explain met.animals")
 
 # ╔═╡ 67c70492-9592-420a-80b9-ea4f54a13247
 """
@@ -237,143 +398,6 @@ function count_spikes(ref::Missing, ts, start, stop)
 	NaN
 end
 
-# ╔═╡ b0203308-4eec-4349-9e72-2afaddecc49f
-"""
-`get_test_and_train(cellid)`
-For a given cellid make a data frame with the necessary information to do the decoding.
-"""
-function get_test_and_train(cellid; trials_per_type=20)
-	spks = spk_dict[cellid]
-	sessid = spks_df.sessid[spks_df.cellid .== cellid][1]
-	ref = ts[sessid]
-	thisdf = @chain sessdf begin
-		@subset(:sessid.==sessid)
-		@select(:lottery_mag,:subj_choice,:trialnum,:viol,:sessid,:subjid)
-		@transform(:cellid = cellid, 
-			:counts = count_spikes(ref, spks, start=0.5, stop=1.0),
-			:chose_lottery = :subj_choice .== "lottery")
-		@aside μ = mean(filter(isfinite, _.counts))
-		@aside sd = std(filter(isfinite, _.counts))
-		@transform(:zcounts = :counts .- μ ./ sd)
-		@subset(:viol .< 1, isfinite.(:zcounts))
-	end
-	nrow(thisdf) < 20 && return nothing
-	augment(thisdf, trials_per_type)
-end
-
-# ╔═╡ 981b47d2-e5bb-47e9-bd32-b953ce1a3a9c
-begin
-	popdf_dict = Dict(k=>get_test_and_train(k) for k in Int.(keys(spk_dict)))
-	filter!(p->(.!isnothing(last(p))), popdf_dict)
-end
-
-# ╔═╡ 2b3b917c-01d9-4ac9-bd47-bf4c95167b76
-"""
-`sample_trial(cellid, lottery_mag, is_test)`
-
-Sample a single zscored spike count from a cell for a given lottery_mag and partition.
-
-Deprecated.
-"""
-function sample_trial(cellid, lottery_mag, test::Bool)
-	@chain popdf_dict[cellid] begin
-		@subset(:chose_lottery, :lottery_mag.==lottery_mag, :is_test.==test; view=true)
-		sample(_.zcounts)
-	end
-end
-
-# ╔═╡ 72d51e88-ef93-4a12-a788-6ac37c065caf
-"""
-Run one permutation
-"""
-function one_perm(; trials_per_type=20, n_cells=20)
-	these_cells = sample(Int.(keys(popdf_dict)), n_cells, replace=true)
-	pop_list = [get_test_and_train(k; trials_per_type) for k in these_cells]
-	train = hcat(getindex.(pop_list,2)...)'
-	test = 	hcat(getindex.(pop_list,3)...)'
-	label = Float64.(pop_list[1][1])
-	rot = fit(PCA, train; maxoutdim=4)
-	rTrain = predict(rot, train)
-	rTest = predict(rot, test)
-	lm = fit(LinearModel, hcat(ones(6*trials_per_type), rTrain'), label)
-	y_hat = predict(lm, hcat(ones(6*trials_per_type), rTest'))
-	(cor(label,y_hat), label, y_hat)
-end
-
-# ╔═╡ ea1a49a6-7a03-46b6-ad13-c66a3de654ef
-bigsim = let 
-	D = Dict{Int,Any}()
-	for n_cells = 2 .^[5:11;]
-		D[n_cells] = ThreadsX.map(x->one_perm(;n_cells), 1:n_perms)
-	end
-	D
-end
-
-# ╔═╡ 343dfac7-823c-4918-8aa1-6fc0a0b4da26
-bigdf, bigD = let
-	l =[]
-	D = Dict()
-	for (k,v) in bigsim
-		tdf = DataFrame(;n=k, Pearson=first.(v))
-		tdf[:,"Spearman"] .= [corspearman(x[2],x[3]) for x in v]
-		tdf[:, "MSE"] .= [sum((x[2].-x[3]).^2) for x in v]
-		push!(l,tdf)
-		D["$k"]=hcat(getindex.(bigsim[k],3)...)
-	end
-	(vcat(l...), D)
-end
-
-# ╔═╡ f07dbd54-8099-47f3-8516-bf3d0947c087
-md"""
-The Spearman rank correlation is quite high even for 32 cells. The decoding saturated around the true population ($(length(keys(spk_dict))) cells) at _r_ = $(round(mean(bigdf.Spearman[bigdf.n.==256]),sigdigits=3))
-"""
-
-# ╔═╡ 4271a374-cb26-432c-9a01-4ea9eafe9212
-let
-	axis = (width = 300, height = 300, 
-		xticks=log2.(unique(bigdf.n)), 
-		xtickformat = x->string.(Int.(2 .^ x)),
-		xticklabelrotation=π/6,
-		ygridvisible=true)
-	p=data(bigdf) * mapping(:n=>log2=>"# of cells", :Spearman=>"Spearman's r") * visual(BoxPlot)
-	draw(p;axis)
-end
-
-# ╔═╡ 43f985b4-5108-4fbc-9a81-59e7999762ba
-let
-	axis = (width = 300, height = 300, 
-		xticks=log2.(unique(bigdf.n)), 
-		xtickformat = x->string.(Int.(2 .^ x)),
-		xticklabelrotation=π/6,
-		ygridvisible=true)
-	p=data(bigdf) * mapping(:n=>log2=>"log₂(# of cells)", :Pearson=>"Pearson's r") * visual(BoxPlot)
-	draw(p;axis)
-end
-
-# ╔═╡ 406dfcf0-472f-4d52-af98-648b10259c1f
-CSV.write("/Users/jerlich/Downloads/fof_pop.csv", bigdf)
-
-# ╔═╡ 668dbf49-e4f4-4188-9165-703b7b84e8ab
-JLD2.save("/Users/jerlich/Downloads/fof_pop.jld2",bigD)
-
-# ╔═╡ a9a5c7ab-5fdb-4521-b1ea-df8f3226f334
-bigD["32"]
-
-# ╔═╡ 63f85be7-bd82-4331-b294-c7b7fe5812da
-JSON3.write("/Users/jerlich/Downloads/fof_pop.json",bigD)
-
-# ╔═╡ acf7f20b-fa1c-4d07-96b1-a15780edcfe0
-hcat(getindex.(bigsim[32],3)...)
-
-# ╔═╡ f2b0ec6f-fa02-49a4-81bd-be14dccc643f
-let 
-	f,ax,l1 = lines([0,32],[0,32])
-	scatter!(ax, bigsim[1024][1][2], bigsim[1024][44][3])
-	ax.xlabel= "Lottery Magnitute"
-	ax.ylabel="CV Estimate"
-	f
-end
-
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
@@ -381,7 +405,6 @@ AlgebraOfGraphics = "cbdf2221-f076-402e-a563-3d30da359d67"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 CodecZlib = "944b1d66-785c-5afd-91f1-9de20f533193"
-DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 DataFramesMeta = "1313f7d8-7da2-5740-9ea0-a2ca25f37964"
 GLM = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
@@ -389,6 +412,7 @@ JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 MultivariateStats = "6f286f6a-111f-5878-ab1e-185364afe411"
 MySQL = "39abe10b-433b-5dbd-92d4-e302a9df00cd"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 ThreadsX = "ac1d9e8a-700a-412c-b207-f0111f4b6c0d"
 
@@ -397,7 +421,6 @@ AlgebraOfGraphics = "~0.6.14"
 CSV = "~0.10.9"
 CairoMakie = "~0.10.2"
 CodecZlib = "~0.7.1"
-DataFrames = "~1.5.0"
 DataFramesMeta = "~0.13.0"
 GLM = "~1.8.1"
 JLD2 = "~0.4.31"
@@ -413,9 +436,9 @@ ThreadsX = "~0.1.11"
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.9.0-rc3"
+julia_version = "1.9.3"
 manifest_format = "2.0"
-project_hash = "ba3c6d08ce269af19426c8d319247d45a1b2e0fb"
+project_hash = "ba76f830524304604a67cacd32bfb7f5681d1b50"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -571,16 +594,6 @@ git-tree-sha1 = "c6d890a52d2c4d55d326439580c3b8d0875a77d9"
 uuid = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
 version = "1.15.7"
 
-[[deps.ChangesOfVariables]]
-deps = ["LinearAlgebra", "Test"]
-git-tree-sha1 = "485193efd2176b88e6622a39a246f8c5b600e74e"
-uuid = "9e997f8a-9a97-42d5-a9f1-ce6bfc15e2c0"
-version = "0.1.6"
-weakdeps = ["ChainRulesCore"]
-
-    [deps.ChangesOfVariables.extensions]
-    ChangesOfVariablesChainRulesCoreExt = "ChainRulesCore"
-
 [[deps.CodecZlib]]
 deps = ["TranscodingStreams", "Zlib_jll"]
 git-tree-sha1 = "9c209fb7536406834aa938fb149964b985de6c83"
@@ -630,7 +643,7 @@ weakdeps = ["Dates", "LinearAlgebra"]
 [[deps.CompilerSupportLibraries_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
-version = "1.0.2+0"
+version = "1.0.5+0"
 
 [[deps.CompositionsBase]]
 git-tree-sha1 = "455419f7e328a1a2493cabc6428d79e951349769"
@@ -712,12 +725,6 @@ git-tree-sha1 = "0fba8b706d0178b4dc7fd44a96a92382c9065c2c"
 uuid = "244e2a9f-e319-4986-a169-4d1fe445cd52"
 version = "0.1.2"
 
-[[deps.DensityInterface]]
-deps = ["InverseFunctions", "Test"]
-git-tree-sha1 = "80c3e8639e3353e5d2912fb3a1916b8455e2494b"
-uuid = "b429d917-457f-4dbc-8f4c-0cc954292b1d"
-version = "0.4.0"
-
 [[deps.Dictionaries]]
 deps = ["Indexing", "Random", "Serialization"]
 git-tree-sha1 = "e82c3c97b5b4ec111f3c1b55228cebc7510525a2"
@@ -739,11 +746,14 @@ deps = ["FillArrays", "LinearAlgebra", "PDMats", "Printf", "QuadGK", "Random", "
 git-tree-sha1 = "da9e1a9058f8d3eec3a8c9fe4faacfb89180066b"
 uuid = "31c24e10-a181-5473-b8eb-7969acd0382f"
 version = "0.25.86"
-weakdeps = ["ChainRulesCore", "DensityInterface"]
 
     [deps.Distributions.extensions]
     DistributionsChainRulesCoreExt = "ChainRulesCore"
     DistributionsDensityInterfaceExt = "DensityInterface"
+
+    [deps.Distributions.weakdeps]
+    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+    DensityInterface = "b429d917-457f-4dbc-8f4c-0cc954292b1d"
 
 [[deps.DocStringExtensions]]
 deps = ["LibGit2"]
@@ -1043,12 +1053,6 @@ git-tree-sha1 = "16c0cc91853084cb5f58a78bd209513900206ce6"
 uuid = "8197267c-284f-5f27-9208-e0e47529a953"
 version = "0.7.4"
 
-[[deps.InverseFunctions]]
-deps = ["Test"]
-git-tree-sha1 = "49510dfcb407e572524ba94aeae2fced1f3feb0f"
-uuid = "3587e190-3f89-42d0-90ee-14403ec27112"
-version = "0.1.8"
-
 [[deps.InvertedIndices]]
 git-tree-sha1 = "82aec7a3dd64f4d9584659dc0b62ef7db2ef3e19"
 uuid = "41ab1584-1d38-5bbf-9106-f11c6c58b48f"
@@ -1216,12 +1220,16 @@ deps = ["DocStringExtensions", "IrrationalConstants", "LinearAlgebra"]
 git-tree-sha1 = "0a1b7c2863e44523180fdb3146534e265a91870b"
 uuid = "2ab3a3ac-af41-5b50-aa03-7779005ae688"
 version = "0.3.23"
-weakdeps = ["ChainRulesCore", "ChangesOfVariables", "InverseFunctions"]
 
     [deps.LogExpFunctions.extensions]
     LogExpFunctionsChainRulesCoreExt = "ChainRulesCore"
     LogExpFunctionsChangesOfVariablesExt = "ChangesOfVariables"
     LogExpFunctionsInverseFunctionsExt = "InverseFunctions"
+
+    [deps.LogExpFunctions.weakdeps]
+    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+    ChangesOfVariables = "9e997f8a-9a97-42d5-a9f1-ce6bfc15e2c0"
+    InverseFunctions = "3587e190-3f89-42d0-90ee-14403ec27112"
 
 [[deps.Logging]]
 uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
@@ -1457,7 +1465,7 @@ version = "0.40.1+0"
 [[deps.Pkg]]
 deps = ["Artifacts", "Dates", "Downloads", "FileWatching", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "REPL", "Random", "SHA", "Serialization", "TOML", "Tar", "UUIDs", "p7zip_jll"]
 uuid = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
-version = "1.9.0"
+version = "1.9.2"
 
 [[deps.PkgVersion]]
 deps = ["Pkg"]
@@ -1738,11 +1746,14 @@ deps = ["HypergeometricFunctions", "IrrationalConstants", "LogExpFunctions", "Re
 git-tree-sha1 = "f625d686d5a88bcd2b15cd81f18f98186fdc0c9a"
 uuid = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
 version = "1.3.0"
-weakdeps = ["ChainRulesCore", "InverseFunctions"]
 
     [deps.StatsFuns.extensions]
     StatsFunsChainRulesCoreExt = "ChainRulesCore"
     StatsFunsInverseFunctionsExt = "InverseFunctions"
+
+    [deps.StatsFuns.weakdeps]
+    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+    InverseFunctions = "3587e190-3f89-42d0-90ee-14403ec27112"
 
 [[deps.StatsModels]]
 deps = ["DataAPI", "DataStructures", "LinearAlgebra", "Printf", "REPL", "ShiftedArrays", "SparseArrays", "StatsBase", "StatsFuns", "Tables"]
@@ -1974,7 +1985,7 @@ version = "0.15.1+0"
 [[deps.libblastrampoline_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "8e850b90-86db-534c-a0d3-1478176c7d93"
-version = "5.7.0+0"
+version = "5.8.0+0"
 
 [[deps.libfdk_aac_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -2024,10 +2035,12 @@ version = "3.5.0+0"
 """
 
 # ╔═╡ Cell order:
-# ╟─b609f26e-6e3b-46be-a666-b8ee1fa74eed
+# ╠═b609f26e-6e3b-46be-a666-b8ee1fa74eed
 # ╟─3d6b1acd-ecc2-47ec-a7ac-eeb356de138c
 # ╠═2226f266-50b6-4873-a9ee-9962f2c965f7
+# ╠═5dc6e010-6763-425f-9673-5e8c366531de
 # ╠═adc9ee76-49c4-4bc0-a49e-bcec5e608924
+# ╠═e9ca3ef3-ffff-4616-8a80-528f91694925
 # ╠═837c9a80-a4f3-4875-bfc3-cf48d013f0b8
 # ╠═5ce21a4c-39f3-4ae6-90e1-152273ac3a53
 # ╟─7d95574a-d9d8-475e-a442-b71a4baabd06
@@ -2041,7 +2054,6 @@ version = "3.5.0+0"
 # ╠═4271a374-cb26-432c-9a01-4ea9eafe9212
 # ╠═43f985b4-5108-4fbc-9a81-59e7999762ba
 # ╠═406dfcf0-472f-4d52-af98-648b10259c1f
-# ╠═668dbf49-e4f4-4188-9165-703b7b84e8ab
 # ╠═a9a5c7ab-5fdb-4521-b1ea-df8f3226f334
 # ╠═63f85be7-bd82-4331-b294-c7b7fe5812da
 # ╠═f2b0ec6f-fa02-49a4-81bd-be14dccc643f
@@ -2052,16 +2064,17 @@ version = "3.5.0+0"
 # ╟─65a600a0-0e21-4001-b263-7b8ea08c3201
 # ╟─f7fa6c13-b1b0-4073-a13f-4c902821c2c3
 # ╟─be09dc1e-cf2e-11ed-115f-6b84480a2336
-# ╟─b0203308-4eec-4349-9e72-2afaddecc49f
+# ╠═b0203308-4eec-4349-9e72-2afaddecc49f
 # ╠═72d51e88-ef93-4a12-a788-6ac37c065caf
-# ╟─6b12563e-4bdf-4dbf-8c63-c52adef1f5be
+# ╠═6b12563e-4bdf-4dbf-8c63-c52adef1f5be
 # ╟─37128bd5-4ee4-459f-b0a9-992586819a3b
 # ╟─2b3b917c-01d9-4ac9-bd47-bf4c95167b76
 # ╟─938d5772-44be-485c-9998-f8ba59ed8ac9
 # ╟─aeadd2e0-b7a4-41aa-b816-b2cc7bba5736
-# ╟─30758904-f0d0-4543-8cf3-89b71c1afcdf
+# ╠═30758904-f0d0-4543-8cf3-89b71c1afcdf
+# ╠═6d397f71-3311-4c58-bbd8-52552700dd5f
 # ╠═721a87b0-5851-414e-8b16-ddaaa0e47188
-# ╟─9f1f32b7-818d-4a1c-8731-da1f8ab5df32
+# ╠═9f1f32b7-818d-4a1c-8731-da1f8ab5df32
 # ╠═67c70492-9592-420a-80b9-ea4f54a13247
 # ╠═f037ece0-bd3e-4590-9203-7ca4d1ca9322
 # ╠═671649f7-c592-44fe-af96-4955fb73c683
